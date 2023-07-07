@@ -198,9 +198,42 @@ pander(summary(results.jags))
 ```
 
 
-## Day 1:
-- Welcome and Introductions
-- Validation by simulation:
-- Recovering simulated parameter values
-- Posterior predicted p-values (recovering test contingency tables)
-- Random effects formulation used in medicine
+## Random effects formulation used in medicine
+
+The "standard" approach, as used in the introductory course, to specifying the interaction between two or more tests, is to add an ammount to the probability that the two tests agree, and subtract the same amount from the probability that they disagree:
+
+| Animal + | Test 1 + | Test 1 - |
+|-|-|-|
+|Test2 + | $Se_1Se_2 + a$ |  $(1-Se_1)Se_2 - a$ |
+|Test2 - | $Se_1(1-Se_2) - a$ |  $(1-Se_1)(1-Se_2) + a$ |
+
+## The problems with this approach
+
+- The possible range of a depends on $Se_1$ and $Se_2$ since these must all be probabilities and add up to 1
+- It is difficult to define the distribution of a
+
+## Alternative formulations
+
+- Define two latent states
+  + e.g. infection and seroconversion
+  + Matt tells me that this converges poorly
+- "Random effects" model
+  + "standard" approach, above can be considered a "fixed effects" model
+  + "random effect" refers to a latent continuous variable associated with each individual
+  + the latent variable can be thought of as the propensity to test positive
+  + latent variables are relevant for both true positive animals (Se) and true negative animals (Sp)
+  + we need a monotonically increasing function limited by [0,1] to link the propensity of an individual and the probability that it tests positive
+  + a logistic model seems appropriate i.e. $P(T_{it} = 1) = a_{td} + b_{td}*p_i, D_i=d$
+    + where $P(T_{it} = 1)$ is the probability that individual i tests positive to test t
+    + $a_{td}\ {\mathrm and}\ b_{td}$ are parameters to estimate for each test, t and disease status, d (diseased or not)
+    + $p_i$ is the propensity for individual i to test positive, and is $\sim{N(0,\sigma^2)}$
+    + $\sigma^2$ may be the same, or different for truly positive and negative individuals
+  + to estimate the overall Se or Sp we need to integrate out $p_i$
+  
+### Thought exercise
+
+How would you:
+
+a) Simulate data to check to see if this works?
+b) Code this in JAGS?
+

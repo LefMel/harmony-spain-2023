@@ -556,12 +556,11 @@ results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, 
 <table>
 <caption>Table continues below</caption>
 <colgroup>
-<col width="27%" />
+<col width="30%" />
+<col width="13%" />
 <col width="12%" />
-<col width="11%" />
+<col width="13%" />
 <col width="12%" />
-<col width="11%" />
-<col width="7%" />
 <col width="8%" />
 <col width="9%" />
 </colgroup>
@@ -574,7 +573,6 @@ results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, 
 <th align="center">Mean</th>
 <th align="center">SD</th>
 <th align="center">Mode</th>
-<th align="center">MCerr</th>
 </tr>
 </thead>
 <tbody>
@@ -583,24 +581,25 @@ results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, 
 <td align="center">0</td>
 <td align="center">0</td>
 <td align="center">1</td>
-<td align="center">0.4996</td>
+<td align="center">0.4979</td>
 <td align="center">0.5</td>
 <td align="center">0</td>
-<td align="center">0.005</td>
 </tr>
 </tbody>
 </table>
-<table style="width:83%;">
+<table style="width:97%;">
 <colgroup>
 <col width="30%" />
+<col width="15%" />
 <col width="13%" />
 <col width="11%" />
-<col width="18%" />
+<col width="16%" />
 <col width="9%" />
 </colgroup>
 <thead>
 <tr class="header">
 <th align="center"> </th>
+<th align="center">MCerr</th>
 <th align="center">MC%ofSD</th>
 <th align="center">SSeff</th>
 <th align="center">AC.10</th>
@@ -610,9 +609,10 @@ results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, 
 <tbody>
 <tr class="odd">
 <td align="center"><strong>obs.mean.higher</strong></td>
+<td align="center">0.005056</td>
 <td align="center">1</td>
-<td align="center">10000</td>
-<td align="center">-1.745e-05</td>
+<td align="center">9779</td>
+<td align="center">-0.001377</td>
 <td align="center">1</td>
 </tr>
 </tbody>
@@ -631,11 +631,11 @@ results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, 
 <caption>Table continues below</caption>
 <colgroup>
 <col width="28%" />
-<col width="13%" />
+<col width="12%" />
 <col width="11%" />
-<col width="13%" />
-<col width="10%" />
-<col width="13%" />
+<col width="12%" />
+<col width="11%" />
+<col width="12%" />
 <col width="9%" />
 </colgroup>
 <thead>
@@ -655,8 +655,8 @@ results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, 
 <td align="center">0</td>
 <td align="center">0</td>
 <td align="center">0</td>
-<td align="center">0.004</td>
-<td align="center">0.06312</td>
+<td align="center">0.0049</td>
+<td align="center">0.06983</td>
 <td align="center">0</td>
 </tr>
 </tbody>
@@ -666,9 +666,9 @@ results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, 
 <col width="30%" />
 <col width="16%" />
 <col width="13%" />
-<col width="10%" />
+<col width="11%" />
 <col width="16%" />
-<col width="12%" />
+<col width="11%" />
 </colgroup>
 <thead>
 <tr class="header">
@@ -683,25 +683,96 @@ results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, 
 <tbody>
 <tr class="odd">
 <td align="center"><strong>obs.mean.higher</strong></td>
-<td align="center">0.0006548</td>
+<td align="center">0.0007111</td>
 <td align="center">1</td>
-<td align="center">9292</td>
-<td align="center">-0.004024</td>
-<td align="center">0.9999</td>
+<td align="center">9643</td>
+<td align="center">-0.004934</td>
+<td align="center">1.005</td>
 </tr>
 </tbody>
 </table>
 </div>
-<div id="day-1" class="section level2">
-<h2>Day 1:</h2>
+<div id="random-effects-formulation-used-in-medicine" class="section level2">
+<h2>Random effects formulation used in medicine</h2>
+<p>The “standard” approach, as used in the introductory course, to
+specifying the interaction between two or more tests, is to add an
+ammount to the probability that the two tests agree, and subtract the
+same amount from the probability that they disagree:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Animal +</th>
+<th>Test 1 +</th>
+<th>Test 1 -</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Test2 +</td>
+<td><span class="math inline">\(Se_1Se_2 + a\)</span></td>
+<td><span class="math inline">\((1-Se_1)Se_2 - a\)</span></td>
+</tr>
+<tr class="even">
+<td>Test2 -</td>
+<td><span class="math inline">\(Se_1(1-Se_2) - a\)</span></td>
+<td><span class="math inline">\((1-Se_1)(1-Se_2) + a\)</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="the-problems-with-this-approach" class="section level2">
+<h2>The problems with this approach</h2>
 <ul>
-<li>Welcome and Introductions</li>
-<li>Validation by simulation:</li>
-<li>Recovering simulated parameter values</li>
-<li>Posterior predicted p-values (recovering test contingency
-tables)</li>
-<li>Random effects formulation used in medicine</li>
+<li>The possible range of a depends on <span class="math inline">\(Se_1\)</span> and <span class="math inline">\(Se_2\)</span> since these must all be
+probabilities and add up to 1</li>
+<li>It is difficult to define the distribution of a</li>
 </ul>
+</div>
+<div id="alternative-formulations" class="section level2">
+<h2>Alternative formulations</h2>
+<ul>
+<li>Define two latent states
+<ul>
+<li>e.g. infection and seroconversion</li>
+<li>Matt tells me that this converges poorly</li>
+</ul></li>
+<li>“Random effects” model
+<ul>
+<li>“standard” approach, above can be considered a “fixed effects”
+model</li>
+<li>“random effect” refers to a latent continuous variable associated
+with each individual</li>
+<li>the latent variable can be thought of as the propensity to test
+positive</li>
+<li>latent variables are relevant for both true positive animals (Se)
+and true negative animals (Sp)</li>
+<li>we need a monotonically increasing function limited by [0,1] to link
+the propensity of an individual and the probability that it tests
+positive</li>
+<li>a logistic model seems appropriate i.e. <span class="math inline">\(P(T_{it} = 1) = a_{td} + b_{td}*p_i,
+D_i=d\)</span>
+<ul>
+<li>where <span class="math inline">\(P(T_{it} = 1)\)</span> is the
+probability that individual i tests positive to test t</li>
+<li><span class="math inline">\(a_{td}\ {\mathrm and}\ b_{td}\)</span>
+are parameters to estimate for each test, t and disease status, d
+(diseased or not)</li>
+<li><span class="math inline">\(p_i\)</span> is the propensity for
+individual i to test positive, and is <span class="math inline">\(\sim{N(0,\sigma^2)}\)</span></li>
+<li><span class="math inline">\(\sigma^2\)</span> may be the same, or
+different for truly positive and negative individuals</li>
+</ul></li>
+<li>to estimate the overall Se or Sp we need to integrate out <span class="math inline">\(p_i\)</span></li>
+</ul></li>
+</ul>
+<div id="thought-exercise" class="section level3">
+<h3>Thought exercise</h3>
+<p>How would you:</p>
+<ol style="list-style-type: lower-alpha">
+<li>Simulate data to check to see if this works?</li>
+<li>Code this in JAGS?</li>
+</ol>
+</div>
 </div>
 
 
