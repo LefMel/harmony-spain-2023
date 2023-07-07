@@ -1,0 +1,206 @@
+---
+title: 'Madrid Advanced training: day 1'
+author: "Giles Innocent"
+date: "2023-07-12"
+output: html_document
+#output: beamer_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(runjags)
+library(pander)
+library(ggplot2)
+```
+
+## Introduction
+
+\Huge"Hello"
+
+## Simulation
+
+- Why simulate?
+- How to simulate
+    + within JAGS
+    + R or equivalent
+    + from an identical model to the analysis model
+    + from a different model to the analysis
+
+## Simulating in R
+
+- Functions like rbinom, rpois, rnorm, etc.
+- All take a first parameter, n the number of data points you wish to simulate
+- E.G. Hui-Walter paradigm:
+```{R}
+  set.seed(1)
+  n.sim <- 1
+  prev <- c(0.25, 0.8)
+  Se.1 <- Se.2 <- 0.8
+  Sp.1 <- Sp.2 <- 0.95
+  n.sampled <- c(100, 100)
+  test.results <- data.frame(pp=numeric(length(prev)),
+                             pn=numeric(length(prev)),
+                             np=numeric(length(prev)),
+                             nn=numeric(length(prev)))
+  for(pop in 1:length(prev)){
+    n.pos <- rbinom(n.sim,n.sampled[pop],prev[pop])
+    test.results$pp[pop] <- rbinom(n.sim, n.pos, Se.1*Se.2) + 
+      rbinom(n.sim, n.sampled[pop]-n.pos, (1-Sp.1)*(1-Sp.2))
+    test.results$pn[pop] <- rbinom(n.sim, n.pos, Se.1*(1-Se.2)) + 
+      rbinom(n.sim, n.sampled[pop]-n.pos, (1-Sp.1)*Sp.2)
+    test.results$np[pop] <- rbinom(n.sim, n.pos, (1-Se.1)*Se.2) + 
+      rbinom(n.sim, n.sampled[pop]-n.pos, Sp.1*(1-Sp.2))
+    test.results$nn[pop] <- n.sampled[pop]-test.results$pp[pop]-
+      test.results$pn[pop] -test.results$np[pop]
+  }
+
+```
+
+- What is wrong with this example?
+
+### A better version
+
+```{R}
+  set.seed(1)
+  n.sim <- 1
+  prev <- c(0.25, 0.8)
+  Se.1 <- Se.2 <- 0.8
+  Sp.1 <- Sp.2 <- 0.95
+  cond.prob.pos <- c(Se.1*Se.2, # probability a positive individual tests ++ 
+                     (1-Se.1)*Se.2, # probability a positive individual tests -+ 
+                     Se.1*(1-Se.2), # probability a positive individual tests + 
+                     (1-Se.1)*(1-Se.2)) # probability a positive individual tests --
+  cond.prob.neg <- c((1-Sp.1)*(1-Sp.2), # probability a negative individual tests ++
+                     Sp.1*(1-Sp.2), # probability a negative individual tests -+
+                     (1-Sp.1)*Sp.2, # probability a negative individual tests +-
+                     Sp.1*Sp.2) # probability a negative individual tests --
+  n.sampled <- c(100, 100)
+  test.results <- matrix(nrow=4,ncol=length(prev), dimnames=list(test.result = c("pp","np","pn","nn"), population = c("a","b")))
+  for(pop in 1:length(prev)){
+    n.pos <- rbinom(n.sim,n.sampled[pop],prev[pop])
+    n.neg <- n.sampled[pop] - n.pos
+    test.results[,pop] <- rmultinom(n.sim, n.pos, cond.prob.pos) + 
+      rmultinom(n.sim, n.neg, cond.prob.neg)
+  }
+
+```
+
+  
+## Example
+
+  - 3 tests; 1 population
+  - 7 parameters:
+      + 3 test sensitivities
+      + 3 test specificities
+      + 1 prevalence
+  - $2^3$ combinations: 7 df in the data
+      + is this identifiable?
+      + are the estimates unbiased?
+      + what if prevalence is very low ~1%?
+      + even with 1000 individuals only ~10 are positive
+      + can't estimate Se well
+      + does a biased estimate of Se bias our estimates of Sp and/or prevalence?
+
+
+```{R}
+prev<- 0.50
+n.sampled <- 1000
+Se <- c(0.8,0.8,0.95)
+Sp <- c(0.95,0.99,0.8)
+
+```
+
+## How good is our posterior?
+
+- Eyeball posterior distribution
+- Are the means (medians, modes?) close to the values used for the simulation
+- If we wish to be more formal about this we would repeat teh simulation-analysis cycle many (400+) times
+  + this takes a long time, typically
+  + which is a better (less biased) predictor: mean, median or mode
+  + are the 95% Credible Intervals true 95% Confidence Intervals
+  
+## Posterior predicted p-values
+
+- But we're Bayesian aren't we?
+- Surely p-values belong to the frequentists!
+- Sometimes it is useful to compare data to a null hypothesis
+
+
+## Calculating a posterior predicted p-value
+
+- Simulate data based on the posterior distribution of the parameters
+- Typically 1 data set per iteration, using all parameters of interest
+- Define a metric/statistic to use
+- Calculate the metric for both the original data and for each simulated data set
+- The distribution of the metric from the simulated data sets represents its distribution under the null hypothesis that the model, and the posterior distributions are correct
+- Hence how extreme are the data under this null hypothesis
+- Low or high p-values (close to 0 or 1) give us cause for concern that the model is wrong.
+- What metric should we use?
+
+## Quick exercise
+
+- Simulate some data ~N(0,1)
+- Use JAGS to estimate the posterior for the mean and precision
+- Use the mean and precision to generate some more data
+- __Calculate__ the mean and variance of the samples
+- Where do the mean and variance of the data sit wrt the samples?
+- What happens if we mis-specify the priors?
+
+
+## My version
+
+```{R}
+n.obs <- 100
+obs <- rnorm(n.obs,0,1)
+obs.mu <- mean(obs)
+
+cat(
+"model{
+  # Likelihood part:
+  for(i in 1:n.obs) {
+    obs[i] ~ dnorm(mu, tau)
+  }
+    
+  # Prior part:
+  mu ~ dnorm(prior.mu.mu, prior.mu.tau)
+  tau ~dgamma(0.001,0.001)
+  
+  # Simulation part
+  for(i in 1:n.obs) {
+    sim.obs[i] ~dnorm(mu, tau)
+  }
+  sim.mu <- mean(sim.obs)
+  obs.mean.higher <- obs.mu > sim.mu
+  
+  # Hooks for automatic integration with R:
+  #data# obs, n.obs, obs.mu, prior.mu.mu, prior.mu.tau
+  #monitor# obs.mean.higher
+}
+", file = "ppp.mu.jags")
+
+prior.mu.mu <- 0
+prior.mu.tau <- 0.001
+runjags.options(silent.jags=TRUE)
+n.burnin <- n.sample <- 5000
+results.jags <- run.jags('ppp.mu.jags', n.chains=2, burnin=n.burnin, sample=n.sample)
+
+pander(summary(results.jags))
+```
+
+## Mis-specifying the prior
+
+```{R}
+prior.mu.mu <- 10
+prior.mu.tau <- 4
+results.jags <- run.jags('ppp.mu.jags', n.chains=2, burnin=n.burnin, sample=n.sample)
+
+pander(summary(results.jags))
+```
+
+
+## Day 1:
+- Welcome and Introductions
+- Validation by simulation:
+- Recovering simulated parameter values
+- Posterior predicted p-values (recovering test contingency tables)
+- Random effects formulation used in medicine
