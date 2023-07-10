@@ -1,0 +1,69 @@
+\documentclass{beamer}
+
+\usepackage[utf8]{inputenc}
+\usetheme{default}
+\title{Choosing a model: From A(IC) to D(IC)}
+\author{Giles Innocent \& Matt Denwood}
+\date{COST-Harmony Madrid July 2023}
+
+\begin{document}
+
+\maketitle
+
+\begin{frame}
+ \frametitle{Why is one model better than another?}
+ \begin{itemize}
+  \item Describes the data
+  \item Fits the data
+  \item As simple as possible (Occam's razor - William of Ockham)
+ \end{itemize}
+ \begin{center}
+  \Huge BUT
+ \end{center}
+ \begin{itemize}
+  \item How good is the fit?
+  \item How simple is simple?
+ \end{itemize}
+\end{frame}
+
+\begin{frame}
+ \frametitle{Enter Akaike}
+ \begin{itemize}
+  \item Akaike information criterion (AIC) is an estimator of prediction error and thereby relative quality of statistical models for a given set of data. (Wikipaedia)
+  \item Based on information theory.
+  \item How much information is in the model?
+  \begin{itemize}
+   \item depends on the number of parameters estimated in the model
+   \item needs a coefficient to weight it equivalnt to the data
+   \item \emph{usually} $2k$
+  \end{itemize}
+
+  \item How much information is in the residuals?
+  \begin{itemize}
+   \item sometimes referred to as ``how surprised are we?''
+   \item if the model fits perfectly then there are no residuals and no information in the data beyond the model.
+   \item information theory indicates that we should use the deviance, i.e. $-2*log(\hat L)$
+  \end{itemize}
+ \end{itemize}
+\end{frame}
+
+\begin{frame}
+ \frametitle{Bayesian MCMC}
+ \begin{itemize}
+  \item The degrees of freedom -- constraints -- in a Bayesian model are difficult to define.
+  \item Probablistic constraints, e.g. informative priors, do not have integer degrees of freedom
+  \item Spiegelhalter \emph{et al.} (2002) proposed the effective number of estimated parameters in a model $P_D$: a non-integer measure.
+ \end{itemize}
+\end{frame}
+
+\begin{frame}
+ \frametitle{Issues}
+ \begin{itemize}
+  \item There are multiple ways of calculating $P_D$.
+  \item Using at least one method $P_D$ is always less than k-1 (df in the data) \emph{even for over specified models.}
+  \item Using DIC alone may lead one to believe in a poorly fittng model. It is better to look at the posterior predictive P-values as well
+ \end{itemize}
+
+\end{frame}
+
+\end{document}
