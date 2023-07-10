@@ -17,6 +17,11 @@ library(ggplot2)
 
 \Huge"Hello"
 
+- Building on the basic course.
+- __NOT__ lecture:practical.
+- More intro: practical or discussion.
+- You'll get more out of it if you try the exercises __before__ looking at the sample code.
+
 ## Simulation
 
 - Why simulate?
@@ -102,11 +107,73 @@ library(ggplot2)
       + does a biased estimate of Se bias our estimates of Sp and/or prevalence?
 
 
+## Example R code
+
 ```{R}
+simulation.3.test <- function(prev,n.sampled,Se,Sp) {
+  if((length(prev)!=1)&(length(n.sampled)!=1)&(length(Se)!=3)&(length(Sp)!=3)) {
+    print("Error in parameters sent to simulation.3.test")
+    stop()
+  }
+  n.pos <- rbinom(1,n.sampled,prev)
+  n.neg <- n.sampled - n.pos
+  test.1 <- c(rbinom(n.pos,1,Se[1]), rbinom(n.neg,1,(1-Sp[1])))
+  test.2 <- c(rbinom(n.pos,1,Se[2]), rbinom(n.neg,1,(1-Sp[2])))
+  test.3 <- c(rbinom(n.pos,1,Se[3]), rbinom(n.neg,1,(1-Sp[3])))
+  test.results <- c(
+    sum(test.1 & test.2 & test.3),
+    sum(test.1 & test.2 & !test.3),
+    sum(test.1 & !test.2 & test.3),
+    sum(test.1 & !test.2 & !test.3),
+    sum(!test.1 & test.2 & test.3),
+    sum(!test.1 & test.2 & !test.3),
+    sum(!test.1 & !test.2 & test.3),
+    sum(!test.1 & !test.2 & !test.3))
+  names(test.results) <- c("ppp", "ppn", "pnp", "pnn", "npp", "npn", "nnp", "nnn")
+  return(test.results)
+}
+```
+
+## Example R/JAGS code
+
+```{R}
+cat(
+"model{
+  # Likelihood part:
+  p.test.result[1] <-prev*Se[1]*Se[2]*Se[3] + (1-prev)*(1-Sp[1])*(1-Sp[2])*(1-Sp[3]) #ppp
+  p.test.result[2] <-prev*Se[1]*Se[2]*(1-Se[3]) + (1-prev)*(1-Sp[1])*(1-Sp[2])*Sp[3] #ppn
+  p.test.result[3] <-prev*Se[1]*(1-Se[2])*Se[3] + (1-prev)*(1-Sp[1])*Sp[2]*(1-Sp[3]) #pnp
+  p.test.result[4] <-prev*Se[1]*(1-Se[2])*(1-Se[3]) + (1-prev)*(1-Sp[1])*Sp[2]*Sp[3] #pnn
+  p.test.result[5] <-prev*(1-Se[1])*Se[2]*Se[3] + (1-prev)*Sp[1]*(1-Sp[2])*(1-Sp[3]) #npp
+  p.test.result[6] <-prev*(1-Se[1])*Se[2]*(1-Se[3]) + (1-prev)*Sp[1]*(1-Sp[2])*Sp[3] #npn
+  p.test.result[7] <-prev*(1-Se[1])*(1-Se[2])*Se[3] + (1-prev)*Sp[1]*Sp[2]*(1-Sp[3]) #nnp
+  p.test.result[8] <-prev*(1-Se[1])*(1-Se[2])*(1-Se[3]) + (1-prev)*Sp[1]*Sp[2]*Sp[3] #nnn
+  test.results ~dmulti(p.test.result, n.tested)
+    
+  # Prior part:
+  prev ~ dbeta(1,1)
+  for(test in 1:3)  {
+    Se[test] ~dbeta(1,1)
+    Sp[test] ~dbeta(1,1)
+  }
+  
+  # Hooks for automatic integration with R:
+  #data# test.results, n.tested
+  #monitor# prev, Se, Sp
+}
+", file = "three.test.jags")
+
 prev<- 0.50
-n.sampled <- 1000
+n.tested <- 1000
 Se <- c(0.8,0.8,0.95)
 Sp <- c(0.95,0.99,0.8)
+test.results <- simulation.3.test(prev,n.tested,Se,Sp)
+
+runjags.options(silent.jags=TRUE)
+n.burnin <- n.sample <- 5000
+results.jags <- run.jags('three.test.jags', n.chains=2, burnin=n.burnin, sample=n.sample)
+
+pander(summary(results.jags))
 
 ```
 

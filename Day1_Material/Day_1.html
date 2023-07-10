@@ -362,6 +362,13 @@ display: none;
 <div id="introduction" class="section level2">
 <h2>Introduction</h2>
 <p>“Hello”</p>
+<ul>
+<li>Building on the basic course.</li>
+<li><strong>NOT</strong> lecture:practical.</li>
+<li>More intro: practical or discussion.</li>
+<li>You’ll get more out of it if you try the exercises
+<strong>before</strong> looking at the sample code.</li>
+</ul>
 </div>
 <div id="simulation" class="section level2">
 <h2>Simulation</h2>
@@ -455,10 +462,240 @@ data
 prevalence?</li>
 </ul></li>
 </ul>
-<pre class="r"><code>prev&lt;- 0.50
-n.sampled &lt;- 1000
+</div>
+<div id="example-r-code" class="section level2">
+<h2>Example R code</h2>
+<pre class="r"><code>simulation.3.test &lt;- function(prev,n.sampled,Se,Sp) {
+  if((length(prev)!=1)&amp;(length(n.sampled)!=1)&amp;(length(Se)!=3)&amp;(length(Sp)!=3)) {
+    print(&quot;Error in parameters sent to simulation.3.test&quot;)
+    stop()
+  }
+  n.pos &lt;- rbinom(1,n.sampled,prev)
+  n.neg &lt;- n.sampled - n.pos
+  test.1 &lt;- c(rbinom(n.pos,1,Se[1]), rbinom(n.neg,1,(1-Sp[1])))
+  test.2 &lt;- c(rbinom(n.pos,1,Se[2]), rbinom(n.neg,1,(1-Sp[2])))
+  test.3 &lt;- c(rbinom(n.pos,1,Se[3]), rbinom(n.neg,1,(1-Sp[3])))
+  test.results &lt;- c(
+    sum(test.1 &amp; test.2 &amp; test.3),
+    sum(test.1 &amp; test.2 &amp; !test.3),
+    sum(test.1 &amp; !test.2 &amp; test.3),
+    sum(test.1 &amp; !test.2 &amp; !test.3),
+    sum(!test.1 &amp; test.2 &amp; test.3),
+    sum(!test.1 &amp; test.2 &amp; !test.3),
+    sum(!test.1 &amp; !test.2 &amp; test.3),
+    sum(!test.1 &amp; !test.2 &amp; !test.3))
+  names(test.results) &lt;- c(&quot;ppp&quot;, &quot;ppn&quot;, &quot;pnp&quot;, &quot;pnn&quot;, &quot;npp&quot;, &quot;npn&quot;, &quot;nnp&quot;, &quot;nnn&quot;)
+  return(test.results)
+}</code></pre>
+</div>
+<div id="example-rjags-code" class="section level2">
+<h2>Example R/JAGS code</h2>
+<pre class="r"><code>cat(
+&quot;model{
+  # Likelihood part:
+  p.test.result[1] &lt;-prev*Se[1]*Se[2]*Se[3] + (1-prev)*(1-Sp[1])*(1-Sp[2])*(1-Sp[3]) #ppp
+  p.test.result[2] &lt;-prev*Se[1]*Se[2]*(1-Se[3]) + (1-prev)*(1-Sp[1])*(1-Sp[2])*Sp[3] #ppn
+  p.test.result[3] &lt;-prev*Se[1]*(1-Se[2])*Se[3] + (1-prev)*(1-Sp[1])*Sp[2]*(1-Sp[3]) #pnp
+  p.test.result[4] &lt;-prev*Se[1]*(1-Se[2])*(1-Se[3]) + (1-prev)*(1-Sp[1])*Sp[2]*Sp[3] #pnn
+  p.test.result[5] &lt;-prev*(1-Se[1])*Se[2]*Se[3] + (1-prev)*Sp[1]*(1-Sp[2])*(1-Sp[3]) #npp
+  p.test.result[6] &lt;-prev*(1-Se[1])*Se[2]*(1-Se[3]) + (1-prev)*Sp[1]*(1-Sp[2])*Sp[3] #npn
+  p.test.result[7] &lt;-prev*(1-Se[1])*(1-Se[2])*Se[3] + (1-prev)*Sp[1]*Sp[2]*(1-Sp[3]) #nnp
+  p.test.result[8] &lt;-prev*(1-Se[1])*(1-Se[2])*(1-Se[3]) + (1-prev)*Sp[1]*Sp[2]*Sp[3] #nnn
+  test.results ~dmulti(p.test.result, n.tested)
+    
+  # Prior part:
+  prev ~ dbeta(1,1)
+  for(test in 1:3)  {
+    Se[test] ~dbeta(1,1)
+    Sp[test] ~dbeta(1,1)
+  }
+  
+  # Hooks for automatic integration with R:
+  #data# test.results, n.tested
+  #monitor# prev, Se, Sp
+}
+&quot;, file = &quot;three.test.jags&quot;)
+
+prev&lt;- 0.50
+n.tested &lt;- 1000
 Se &lt;- c(0.8,0.8,0.95)
-Sp &lt;- c(0.95,0.99,0.8)</code></pre>
+Sp &lt;- c(0.95,0.99,0.8)
+test.results &lt;- simulation.3.test(prev,n.tested,Se,Sp)
+
+runjags.options(silent.jags=TRUE)
+n.burnin &lt;- n.sample &lt;- 5000
+results.jags &lt;- run.jags(&#39;three.test.jags&#39;, n.chains=2, burnin=n.burnin, sample=n.sample)</code></pre>
+<pre><code>## Loading required namespace: rjags</code></pre>
+<pre><code>## Warning: No initial values were provided - JAGS will use the same initial
+## values for all chains</code></pre>
+<pre><code>## Finished running the simulation</code></pre>
+<pre class="r"><code>pander(summary(results.jags))</code></pre>
+<table>
+<caption>Table continues below</caption>
+<colgroup>
+<col width="15%" />
+<col width="12%" />
+<col width="11%" />
+<col width="12%" />
+<col width="11%" />
+<col width="13%" />
+<col width="8%" />
+<col width="15%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="center"> </th>
+<th align="center">Lower95</th>
+<th align="center">Median</th>
+<th align="center">Upper95</th>
+<th align="center">Mean</th>
+<th align="center">SD</th>
+<th align="center">Mode</th>
+<th align="center">MCerr</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="center"><strong>prev</strong></td>
+<td align="center">0.4607</td>
+<td align="center">0.4983</td>
+<td align="center">0.5328</td>
+<td align="center">0.4986</td>
+<td align="center">0.01852</td>
+<td align="center">NA</td>
+<td align="center">0.000307</td>
+</tr>
+<tr class="even">
+<td align="center"><strong>Se[1]</strong></td>
+<td align="center">0.7526</td>
+<td align="center">0.7949</td>
+<td align="center">0.8353</td>
+<td align="center">0.7943</td>
+<td align="center">0.02144</td>
+<td align="center">NA</td>
+<td align="center">0.0003222</td>
+</tr>
+<tr class="odd">
+<td align="center"><strong>Se[2]</strong></td>
+<td align="center">0.7398</td>
+<td align="center">0.7845</td>
+<td align="center">0.8267</td>
+<td align="center">0.7839</td>
+<td align="center">0.02244</td>
+<td align="center">NA</td>
+<td align="center">0.0003504</td>
+</tr>
+<tr class="even">
+<td align="center"><strong>Se[3]</strong></td>
+<td align="center">0.9251</td>
+<td align="center">0.9514</td>
+<td align="center">0.9728</td>
+<td align="center">0.9504</td>
+<td align="center">0.01228</td>
+<td align="center">NA</td>
+<td align="center">0.0001909</td>
+</tr>
+<tr class="odd">
+<td align="center"><strong>Sp[1]</strong></td>
+<td align="center">0.918</td>
+<td align="center">0.9445</td>
+<td align="center">0.9684</td>
+<td align="center">0.9438</td>
+<td align="center">0.01301</td>
+<td align="center">NA</td>
+<td align="center">0.000191</td>
+</tr>
+<tr class="even">
+<td align="center"><strong>Sp[2]</strong></td>
+<td align="center">0.9725</td>
+<td align="center">0.9874</td>
+<td align="center">1</td>
+<td align="center">0.9866</td>
+<td align="center">0.007859</td>
+<td align="center">NA</td>
+<td align="center">0.0001251</td>
+</tr>
+<tr class="odd">
+<td align="center"><strong>Sp[3]</strong></td>
+<td align="center">0.7697</td>
+<td align="center">0.8131</td>
+<td align="center">0.8533</td>
+<td align="center">0.8129</td>
+<td align="center">0.02134</td>
+<td align="center">NA</td>
+<td align="center">0.0003221</td>
+</tr>
+</tbody>
+</table>
+<table style="width:71%;">
+<colgroup>
+<col width="16%" />
+<col width="13%" />
+<col width="11%" />
+<col width="16%" />
+<col width="12%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="center"> </th>
+<th align="center">MC%ofSD</th>
+<th align="center">SSeff</th>
+<th align="center">AC.10</th>
+<th align="center">psrf</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="center"><strong>prev</strong></td>
+<td align="center">1.7</td>
+<td align="center">3641</td>
+<td align="center">-0.008379</td>
+<td align="center">1.002</td>
+</tr>
+<tr class="even">
+<td align="center"><strong>Se[1]</strong></td>
+<td align="center">1.5</td>
+<td align="center">4427</td>
+<td align="center">0.005174</td>
+<td align="center">1.002</td>
+</tr>
+<tr class="odd">
+<td align="center"><strong>Se[2]</strong></td>
+<td align="center">1.6</td>
+<td align="center">4100</td>
+<td align="center">0.01607</td>
+<td align="center">1.001</td>
+</tr>
+<tr class="even">
+<td align="center"><strong>Se[3]</strong></td>
+<td align="center">1.6</td>
+<td align="center">4142</td>
+<td align="center">-0.001916</td>
+<td align="center">1</td>
+</tr>
+<tr class="odd">
+<td align="center"><strong>Sp[1]</strong></td>
+<td align="center">1.5</td>
+<td align="center">4640</td>
+<td align="center">-0.01501</td>
+<td align="center">0.9999</td>
+</tr>
+<tr class="even">
+<td align="center"><strong>Sp[2]</strong></td>
+<td align="center">1.6</td>
+<td align="center">3947</td>
+<td align="center">0.009844</td>
+<td align="center">1</td>
+</tr>
+<tr class="odd">
+<td align="center"><strong>Sp[3]</strong></td>
+<td align="center">1.5</td>
+<td align="center">4388</td>
+<td align="center">0.0113</td>
+<td align="center">1.001</td>
+</tr>
+</tbody>
+</table>
 </div>
 <div id="how-good-is-our-posterior" class="section level2">
 <h2>How good is our posterior?</h2>
@@ -548,7 +785,6 @@ prior.mu.tau &lt;- 0.001
 runjags.options(silent.jags=TRUE)
 n.burnin &lt;- n.sample &lt;- 5000
 results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, sample=n.sample)</code></pre>
-<pre><code>## Loading required namespace: rjags</code></pre>
 <pre><code>## Warning: No initial values were provided - JAGS will use the same initial
 ## values for all chains</code></pre>
 <pre><code>## Finished running the simulation</code></pre>
@@ -556,13 +792,13 @@ results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, 
 <table>
 <caption>Table continues below</caption>
 <colgroup>
-<col width="30%" />
-<col width="13%" />
+<col width="28%" />
 <col width="12%" />
-<col width="13%" />
+<col width="11%" />
 <col width="12%" />
-<col width="8%" />
-<col width="9%" />
+<col width="11%" />
+<col width="11%" />
+<col width="11%" />
 </colgroup>
 <thead>
 <tr class="header">
@@ -579,22 +815,22 @@ results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, 
 <tr class="odd">
 <td align="center"><strong>obs.mean.higher</strong></td>
 <td align="center">0</td>
+<td align="center">0</td>
 <td align="center">1</td>
-<td align="center">1</td>
-<td align="center">0.5028</td>
-<td align="center">0.5</td>
-<td align="center">1</td>
+<td align="center">0.4893</td>
+<td align="center">0.4999</td>
+<td align="center">0</td>
 </tr>
 </tbody>
 </table>
-<table>
+<table style="width:96%;">
 <colgroup>
 <col width="30%" />
 <col width="15%" />
 <col width="13%" />
 <col width="11%" />
-<col width="16%" />
-<col width="12%" />
+<col width="15%" />
+<col width="9%" />
 </colgroup>
 <thead>
 <tr class="header">
@@ -609,11 +845,11 @@ results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, 
 <tbody>
 <tr class="odd">
 <td align="center"><strong>obs.mean.higher</strong></td>
-<td align="center">0.005097</td>
+<td align="center">0.004999</td>
 <td align="center">1</td>
-<td align="center">9624</td>
-<td align="center">0.0003679</td>
-<td align="center">0.9999</td>
+<td align="center">10000</td>
+<td align="center">0.001861</td>
+<td align="center">1</td>
 </tr>
 </tbody>
 </table>
@@ -655,8 +891,8 @@ results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, 
 <td align="center">0</td>
 <td align="center">0</td>
 <td align="center">0</td>
-<td align="center">0.0043</td>
-<td align="center">0.06544</td>
+<td align="center">0.0018</td>
+<td align="center">0.04239</td>
 <td align="center">0</td>
 </tr>
 </tbody>
@@ -683,11 +919,11 @@ results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, 
 <tbody>
 <tr class="odd">
 <td align="center"><strong>obs.mean.higher</strong></td>
-<td align="center">0.0006814</td>
-<td align="center">1</td>
-<td align="center">9223</td>
-<td align="center">-0.004327</td>
-<td align="center">1.002</td>
+<td align="center">0.0004802</td>
+<td align="center">1.1</td>
+<td align="center">7793</td>
+<td align="center">-0.001807</td>
+<td align="center">1.024</td>
 </tr>
 </tbody>
 </table>
