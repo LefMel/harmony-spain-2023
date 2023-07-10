@@ -223,12 +223,14 @@ The "standard" approach, as used in the introductory course, to specifying the i
   + the latent variable can be thought of as the propensity to test positive
   + latent variables are relevant for both true positive animals (Se) and true negative animals (Sp)
   + we need a monotonically increasing function limited by [0,1] to link the propensity of an individual and the probability that it tests positive
-  + a logistic model seems appropriate i.e. $P(T_{it} = 1) = a_{td} + b_{td}*p_i, D_i=d$
+  + a logistic model seems appropriate i.e. $\mathrm{logit}(P(T_{it}) = 1) = a_{td} + b_{d}*p_i, D_i=d$
     + where $P(T_{it} = 1)$ is the probability that individual i tests positive to test t
-    + $a_{td}\ {\mathrm and}\ b_{td}$ are parameters to estimate for each test, t and disease status, d (diseased or not)
-    + $p_i$ is the propensity for individual i to test positive, and is $\sim{N(0,\sigma^2)}$
-    + $\sigma^2$ may be the same, or different for truly positive and negative individuals
+    + $a_{td}$ is a parameter to estimate for each test, t and disease status, d (diseased or not) and can be thought of as an estimate of teh test sensitivity or specificity
+    + $p_i$ is the propensity for individual i to test positive, and is $\sim{N(0,1)}$
+    + $b_d$ is a scaling factor since we use a standardised normal distribution for $p_i$
+    + an alternative formulation is to replace $b_{d}*p_i$ with $p_i \simN(0, Tau_d$
   + to estimate the overall Se or Sp we need to integrate out $p_i$
+  + if $b_d$ is zero (or all $p_i$ are identical) then the Sensitivities/Specificities are conditionally independent
   
 ### Thought exercise
 

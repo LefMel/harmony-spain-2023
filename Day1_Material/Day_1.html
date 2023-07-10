@@ -579,22 +579,22 @@ results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, 
 <tr class="odd">
 <td align="center"><strong>obs.mean.higher</strong></td>
 <td align="center">0</td>
-<td align="center">0</td>
 <td align="center">1</td>
-<td align="center">0.4979</td>
+<td align="center">1</td>
+<td align="center">0.5028</td>
 <td align="center">0.5</td>
-<td align="center">0</td>
+<td align="center">1</td>
 </tr>
 </tbody>
 </table>
-<table style="width:97%;">
+<table>
 <colgroup>
 <col width="30%" />
 <col width="15%" />
 <col width="13%" />
 <col width="11%" />
 <col width="16%" />
-<col width="9%" />
+<col width="12%" />
 </colgroup>
 <thead>
 <tr class="header">
@@ -609,11 +609,11 @@ results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, 
 <tbody>
 <tr class="odd">
 <td align="center"><strong>obs.mean.higher</strong></td>
-<td align="center">0.005056</td>
+<td align="center">0.005097</td>
 <td align="center">1</td>
-<td align="center">9779</td>
-<td align="center">-0.001377</td>
-<td align="center">1</td>
+<td align="center">9624</td>
+<td align="center">0.0003679</td>
+<td align="center">0.9999</td>
 </tr>
 </tbody>
 </table>
@@ -655,8 +655,8 @@ results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, 
 <td align="center">0</td>
 <td align="center">0</td>
 <td align="center">0</td>
-<td align="center">0.0049</td>
-<td align="center">0.06983</td>
+<td align="center">0.0043</td>
+<td align="center">0.06544</td>
 <td align="center">0</td>
 </tr>
 </tbody>
@@ -683,11 +683,11 @@ results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, 
 <tbody>
 <tr class="odd">
 <td align="center"><strong>obs.mean.higher</strong></td>
-<td align="center">0.0007111</td>
+<td align="center">0.0006814</td>
 <td align="center">1</td>
-<td align="center">9643</td>
-<td align="center">-0.004934</td>
-<td align="center">1.005</td>
+<td align="center">9223</td>
+<td align="center">-0.004327</td>
+<td align="center">1.002</td>
 </tr>
 </tbody>
 </table>
@@ -749,20 +749,24 @@ and true negative animals (Sp)</li>
 <li>we need a monotonically increasing function limited by [0,1] to link
 the propensity of an individual and the probability that it tests
 positive</li>
-<li>a logistic model seems appropriate i.e. <span class="math inline">\(P(T_{it} = 1) = a_{td} + b_{td}*p_i,
-D_i=d\)</span>
+<li>a logistic model seems appropriate i.e. <span class="math inline">\(\mathrm{logit}(P(T_{it}) = 1) = a_{td} +
+b_{d}*p_i, D_i=d\)</span>
 <ul>
 <li>where <span class="math inline">\(P(T_{it} = 1)\)</span> is the
 probability that individual i tests positive to test t</li>
-<li><span class="math inline">\(a_{td}\ {\mathrm and}\ b_{td}\)</span>
-are parameters to estimate for each test, t and disease status, d
-(diseased or not)</li>
+<li><span class="math inline">\(a_{td}\)</span> is a parameter to
+estimate for each test, t and disease status, d (diseased or not) and
+can be thought of as an estimate of teh test sensitivity or
+specificity</li>
 <li><span class="math inline">\(p_i\)</span> is the propensity for
-individual i to test positive, and is <span class="math inline">\(\sim{N(0,\sigma^2)}\)</span></li>
-<li><span class="math inline">\(\sigma^2\)</span> may be the same, or
-different for truly positive and negative individuals</li>
+individual i to test positive, and is <span class="math inline">\(\sim{N(0,1)}\)</span></li>
+<li><span class="math inline">\(b_d\)</span> is a scaling factor since
+we use a standardised normal distribution for <span class="math inline">\(p_i\)</span></li>
+<li>an alternative formulation is to replace <span class="math inline">\(b_{d}*p_i\)</span> with <span class="math inline">\(p_i \simN(0, Tau_d\)</span></li>
 </ul></li>
 <li>to estimate the overall Se or Sp we need to integrate out <span class="math inline">\(p_i\)</span></li>
+<li>if <span class="math inline">\(b_d\)</span> is zero (or all <span class="math inline">\(p_i\)</span> are identical) then the
+Sensitivities/Specificities are conditionally independent</li>
 </ul></li>
 </ul>
 <div id="thought-exercise" class="section level3">
