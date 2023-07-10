@@ -108,6 +108,27 @@ n.sampled <- 1000
 Se <- c(0.8,0.8,0.95)
 Sp <- c(0.95,0.99,0.8)
 
+simulation.3.test <- function(prev,n.sampled,Se,Sp) {
+  if((length(prev)!=1)&(length(n.sampled)!=1)&(length(Se)!=3)&(length(Sp)!=3)) {
+    print("Error in parameters sent to simulation.3.test")
+    stop()
+  }
+  n.pos <- rbinom(1,n.sampled,prev)
+  n.neg <- n.sampled - n.pos
+  test.1 <- c(rbinom(n.pos,1,Se[1]), rbinom(n.neg,1,(1-Sp[1])))
+  test.2 <- c(rbinom(n.pos,1,Se[2]), rbinom(n.neg,1,(1-Sp[2])))
+  test.3 <- c(rbinom(n.pos,1,Se[3]), rbinom(n.neg,1,(1-Sp[3])))
+  test.results <- list(
+  ppp = sum(test.1 & test.2 & test.3),
+  ppn = sum(test.1 & test.2 & !test.3),
+  pnp = sum(test.1 & !test.2 & test.3),
+  pnn = sum(test.1 & !test.2 & !test.3),
+  npp = sum(!test.1 & test.2 & test.3),
+  npn = sum(!test.1 & test.2 & !test.3),
+  nnp = sum(!test.1 & !test.2 & test.3),
+  nnn = sum(!test.1 & !test.2 & !test.3))
+  return(test.results)
+}
 ```
 
 ## How good is our posterior?
