@@ -1,0 +1,224 @@
+---
+title: "Session 3"
+author: "Matt Denwood"
+date: '2023-07-13'
+output:
+  html_document: default
+  beamer_presentation:
+    pandoc_args:
+    - -t
+    - beamer
+    slide_level: 2
+theme: metropolis
+aspectratio: 169
+colortheme: seahorse
+header-includes: \input{../rsc/preamble}
+params:
+  presentation: no
+subtitle: Sample Size Estimation
+---
+
+```{r setup, include=FALSE}
+source("../rsc/setup.R")
+```
+
+
+# Background to sample size calculations
+
+## Power calculation
+
+Power is defined as the proportion of experiments that can be expected to give p-values of <= 0.05 (or whatever alpha is chosen), conditional on the specified parameters.  Power calculations can be done using:
+
+- Approximation methods, e.g. power.t.test:
+
+```{r}
+power.t.test(n = 150, delta = 0.25, sd = 1)
+```
+- Numerical methods i.e. by simulation:
+
+```{r}
+library("tidyverse")
+```
+
+A function to simulate data, then calculate and return a p-value:
+
+```{r}
+p_fun <- function(parameters){
+  sample1 <- rnorm(parameters$Size, mean=0, sd=1)
+  sample2 <- rnorm(parameters$Size, mean=0.25, sd=1)
+  parameters |>
+    mutate(P_val = t.test(sample1, sample2)$p.value)
+}
+```
+
+There is randomness so this will be different every time it is run:
+
+```{r}
+p_fun(tibble(Size = 150L))
+p_fun(tibble(Size = 150L))
+```
+
+So we must run it several times (e.g. 1000):
+
+```{r}
+tibble(Iteration = seq_len(1000L), Size = 150L) |>
+  group_split(Iteration, Size) |>
+  lapply(p_fun) |>
+  bind_rows() ->
+  pvals
+```
+
+And we calculate the power as so:
+
+```{r}
+pvals |>
+  group_by(Size) |>
+  summarise(Power = sum(P_val <= 0.05) / n(), .groups="drop")
+```
+
+### Exercise
+
+1. Examine and run the code given above - make sure you understand what the p_fun function does and why the code is separated into function/usage like this
+
+1. What are the advantages/disadvantages of each approach?
+
+
+## Sample size estimation
+
+The goal is typically to find the minimum sample size that corresponds to >= 80\% power, for a specified set of parameters.  This can be done in one of two ways:
+
+- Using approximation methods directly i.e.:
+
+```{r}
+power.t.test(n = NULL, delta = 0.25, sd = 1, power = 0.8)
+```
+- By trying different sample sizes (using either approximation methods or simulation):
+
+```{r}
+tibble(Size = seq(100, 500, by=25)) |>
+  group_split(Size) |>
+  lapply(function(parameters){
+    parameters |>
+      mutate(Power = power.t.test(n = parameters$Size, delta = 0.25, sd = 1)$power)
+  }) |>
+  bind_rows() |>
+  ggplot(aes(x=Size, y=Power)) +
+  geom_point() +
+  stat_smooth(method="loess") +
+  geom_hline(yintercept = 0.8)
+```
+
+
+### Exercise
+
+1. Find the required sample size by simulation
+
+1. What are the challenges of doing this by simulation that we don't have to worry about when using approximation methods?
+
+
+# Sample size calculation for LCM
+
+## Determining the objective
+
+Let's take a simple 2-test, 2-population Hui-Walter model as an example.
+
+Group discussion:
+
+- What parameters do we need to simulate a dataset?  Which of these are experimental/controllable parameters, and which are nuisance parameters?
+
+- What might we be interested in estimating from the model?
+
+- How can we maximise the efficiency of fitting the model to each dataset we simulate?
+
+
+### Exercise
+
+Write a function to:
+
+1. Take input parameters:  2xN, 2xSe, 2xSp, 2xPrev
+
+1. Simulate a dataset
+
+1. Analyse the dataset as quickly as possible
+
+1. Return 95\% CI for the two prevalence, sensitivity and specificity parameters
+
+Remember efficiency, including:
+
+- Restrict Se/Sp to values above 50\%
+
+- Run minimal burnin and samples
+
+- Don't calculate plots or summary statistics you don't need i.e. set summarise=FALSE
+
+- Set the following to silence output:
+
+```{r}
+runjags.options(silent.jags=TRUE, silent.runjags=TRUE)
+```
+
+Finally, test that the function works.  Use parameter values for prevalence, se and sp as follows:
+
+- Prevalence:  10\%, 35\%
+- Sensitivity:  80\%, 90\%
+- Specificity:  99\%, 95\%
+
+Use your own suggestions for N values!
+
+
+### Optional exercise
+
+Adapt the function to calculate and return 95\% CI for the following:
+
+- The difference in prevalence between the two populations
+
+- Youden's index for each test (Se+Sp-1)
+
+- The ratio of Youden's index between each test
+
+
+## Obtaining an answer
+
+The answer depends on the objective ... and there are many things that might be the objective, including:
+
+- Width of 95\% CI for sensitivity for one or both tests
+
+- Width of 95\% CI for specificity for one or both tests
+
+- Width of 95\% CI for prevalence in one or both populations
+
+- Something more complex, like proving one test has a higher Se/Sp than the other (maybe using Bayesian p-values)
+
+- Several / all of the above
+
+Group discussion:
+
+- How would we expect these things to vary depending on:
+  - Number of samples in each population
+  - Estimated prevalence in each population
+
+- What trade-offs can we expect?
+
+
+### Exercise
+
+1. Copy/modify your function to calculate and return three values:  the width of 95\% CI for the two prevalence parameters, and the average of these widths
+
+1. Calculate and analyse 50 datasets each for a total of 120, 150, 240 samples, where the samples are split 1/3 vs 2/3, 1/2 vs 1/2, and 2/3 vs 1/3 between the two populations.
+
+1. Visualise the results
+
+Tip:  use pbapply::pblapply to get a progress indicator and/or split the computation onto multiple processors.
+
+
+## Additional considerations
+
+
+## More reading
+
+If you are interested, you can see some related work here: [https://www.costmodds.org/projects/covetlabLCM/sample_size_calculation.html](https://www.costmodds.org/projects/covetlabLCM/sample_size_calculation.html)
+
+
+```{r include=FALSE}
+unlink(cleanup)
+```
