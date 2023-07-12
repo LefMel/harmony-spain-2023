@@ -22,6 +22,23 @@ subtitle: Sample Size Estimation
 source("../rsc/setup.R")
 ```
 
+# An introduction to day 2
+
+## Building on day 1
+
+Yesterday we looked at simulating data - we will continue that theme today!
+
+BUT:  my code looks a bit different to Giles's code, e.g.:
+
+```{r}
+# If necessary:
+## install.packages(c("tidyverse","pbapply"))
+library("tidyverse")
+library("pbapply")
+```
+
+REMEMBER:  the coding style is not important as long as the output is the same
+
 
 # Background to sample size calculations
 
@@ -36,14 +53,11 @@ power.t.test(n = 150, delta = 0.25, sd = 1)
 ```
 - Numerical methods i.e. by simulation:
 
-```{r}
-library("tidyverse")
-```
-
 A function to simulate data, then calculate and return a p-value:
 
 ```{r}
 p_fun <- function(parameters){
+  stopifnot(is.data.frame(parameters), nrow(parameters)==1L, "Size" %in% names(parameters))
   sample1 <- rnorm(parameters$Size, mean=0, sd=1)
   sample2 <- rnorm(parameters$Size, mean=0.25, sd=1)
   parameters |>
@@ -80,7 +94,7 @@ pvals |>
 
 1. Examine and run the code given above - make sure you understand what the p_fun function does and why the code is separated into function/usage like this
 
-1. What are the advantages/disadvantages of each approach?
+1. What are the advantages/disadvantages of the approximation method vs numeric method?
 
 
 ## Sample size estimation
@@ -135,7 +149,7 @@ Group discussion:
 
 Write a function to:
 
-1. Take input parameters:  2xN, 2xSe, 2xSp, 2xPrev
+1. Take input parameters in two arguments:  controllable (2xN), and nuisance (2xSe, 2xSp, 2xPrev)
 
 1. Simulate a dataset
 
@@ -143,9 +157,11 @@ Write a function to:
 
 1. Return 95\% CI for the two prevalence, sensitivity and specificity parameters
 
-Remember efficiency, including:
+Remember to:
 
 - Restrict Se/Sp to values above 50\%
+
+- Set the random seed in BOTH R and JAGS
 
 - Run minimal burnin and samples
 
@@ -165,6 +181,8 @@ Finally, test that the function works.  Use parameter values for prevalence, se 
 
 Use your own suggestions for N values!
 
+HINT:  think about how you would code this first, but it is definitely OK to look at the solution (below the optional exercise) rather than trying to code the whole thing yourself!
+
 
 ### Optional exercise
 
@@ -175,6 +193,181 @@ Adapt the function to calculate and return 95\% CI for the following:
 - Youden's index for each test (Se+Sp-1)
 
 - The ratio of Youden's index between each test
+
+
+### Solution
+
+Here is one way of coding this.
+
+Required packages etc:
+
+```{r}
+# Required packages:
+library("tidyverse")
+library("pbapply")
+library("runjags")
+
+# Explicitly load coda for summary statistics:
+library("coda")
+
+# Silence output from runjags:
+runjags.options(silent.jags=TRUE, silent.runjags=TRUE)
+```
+
+A function to simulate and analyse data:
+
+```{r}
+bootfun <- function(parameters, nuisance, burnin=1000L, sample=5000L){
+  
+  # Parameter checks:
+  stopifnot(is.data.frame(parameters), nrow(parameters)==1L, all(c("Iteration","N_1","N_2") %in% names(parameters)), parameters$N_1 > 0L, parameters$N_2 > 0L)
+  
+  # Nuisance parameter checks:
+  is_prob <- function(x) all(x >= 0.0 & x <= 1.0)
+  stopifnot(is.list(nuisance), all(c("Se","Sp","Prev") %in% names(nuisance)), is_prob(nuisance$Se), is_prob(nuisance$Sp), is_prob(nuisance$Prev))
+  
+  # Simulate data at individual level (not the fastest, but it is the safest!):
+  ## A row per individual in each population:
+  list(
+    tibble(Individual = seq_len(parameters$N_1), Population = 1L),
+    tibble(Individual = seq_len(parameters$N_2), Population = 2L)
+  ) |>
+  ## Generate individual-level test results:
+    bind_rows() |>
+    mutate(Status = rbinom(n(), 1L, prob=nuisance$Prev[Population])) |>
+    mutate(Test1 = rbinom(n(), 1L, prob=nuisance$Se[1L] * Status + (1.0-nuisance$Sp[1L]) * (1L-Status))) |>
+    mutate(Test2 = rbinom(n(), 1L, prob=nuisance$Se[2L] * Status + (1.0-nuisance$Sp[2L]) * (1L-Status))) |>
+  ## Summarise:
+    count(Population, Test1, Test2) |>
+  ## Make sure to fill in any non-existing combinations with explicit 0:
+    complete(Population, Test1, Test2, fill = list(n = 0L)) |>
+  ## Order to match the JAGS model code:
+    arrange(Population, Test2, Test1) ->
+    simdata
+  
+  ## Check (better safe than sorry):
+  stopifnot(nrow(simdata)==8L)
+  
+  # JAGS model:
+  mod <- "model{
+	for(p in 1:Populations){
+		Tally[1:4,p] ~ dmulti(prob[1:4,p], N[p])
+		prob[1,p] <- prev[p] * ((1-se[1])*(1-se[2]))  +  (1-prev[p]) * (sp[1])*(sp[2])
+		prob[2,p] <- prev[p] * (se[1]*(1-se[2]))  +  (1-prev[p]) * (1-sp[1])*sp[2]
+		prob[3,p] <- prev[p] * ((1-se[1])*(se[2]))  +  (1-prev[p]) * (sp[1])*(1-sp[2])
+		prob[4,p] <- prev[p] * (se[1]*se[2])  +  (1-prev[p]) * (1-sp[1])*(1-sp[2])
+	}
+	for(p in 1:Populations){
+  	prev[p] ~ dbeta(1,1)
+	}
+  for(t in 1:2){
+    se[t] ~ dbeta(1,1)
+    sp[t] ~ dbeta(1,1)T(1-se[t],)
+    youden[t] <- se[t]+sp[t]-1.0
+  }
+  prev_diff <- prev[1]-prev[2]
+  youden_ratio <- youden[1]/youden[2]
+}"
+  
+  # Data and inits blocks:
+  data <- list(Populations=2L, Tally=matrix(simdata$n, ncol=2L), N=c(parameters$N_1, parameters$N_2))
+  inits <- list(se = nuisance$Se, sp = nuisance$Sp, prev = nuisance$Prev, .RNG.name = "lecuyer::RngStream")
+
+  # Run the model:
+  results <- run.jags(mod, monitor=c("prev","se","sp","prev_diff","youden","youden_ratio"),
+              data=data, n.chains=2L,
+              inits = list(c(inits,.RNG.seed=1), c(inits,.RNG.seed=2)),
+              burnin=burnin, sample=sample, method="rjags", summarise=FALSE)
+  
+  # Calculate summary statistics, add to the parameters, and return:
+  mcmc <- as.mcmc.list(results)
+  hpd <- results |> combine.mcmc() |> HPDinterval()
+  bind_cols(
+    parameters,
+    tibble(
+      Variable = varnames(mcmc),
+      SSeff = effectiveSize(mcmc),
+      psrf = gelman.diag(mcmc, multivariate=FALSE, autoburnin=FALSE)[[1]][,1],
+      LowerCI = hpd[,1],
+      UpperCI = hpd[,2]
+    )
+  )
+}
+```
+
+Example usage:
+
+```{r}
+parameters <- tibble(Iteration = 1L, N_1 = 100L, N_2 = 100L)
+nuisance <- list(Se = c(0.8, 0.9), Sp = c(0.99, 0.95), Prev = c(0.10, 0.35))
+
+system.time(
+  bootfun(parameters, nuisance)
+)
+```
+
+Example usage for 50 iterations on 10 cores:
+
+CLuster setup code - Windows:
+
+```{r eval=FALSE}
+library("parallel")
+cl <- makePSOCKcluster(10L)
+clusterEvalQ(cl, {
+  library("tidyverse")
+  library("runjags")
+  library("coda")
+  runjags.options(silent.jags=TRUE, silent.runjags=TRUE)
+  library("rjags")
+  load.module("lecuyer")
+}) -> tt
+```
+
+Cluster setup code - mac/linux:
+
+```{r}
+if(.Platform$OS.type=="unix") cl <- 10L
+```
+
+Run the simulations in parallel with a progress bar:
+
+```{r}
+tibble(Iteration = seq_len(50L), N_1 = 100L, N_2 = 100L) |>
+  group_split(Iteration) |>
+  pblapply(bootfun, nuisance=nuisance, cl=cl) |>
+  bind_rows() ->
+  all_results
+
+## Only needed on Windows:
+if(inherits(cl, "cluster")) stopCluster(cl)
+```
+
+The results:
+
+```{r}
+all_results
+```
+
+Now we can use standard tidyverse tools, e.g.:
+
+```{r}
+all_results |>
+  mutate(Parameter = case_when(
+    str_detect(Variable, "se\\[") ~ "Se",
+    str_detect(Variable, "sp\\[") ~ "Sp",
+    str_detect(Variable, "youden\\[") ~ "youden",
+    TRUE ~ "Other"
+  )) |>
+  filter(Parameter %in% c("Se","Sp","youden")) |>
+  mutate(Test = case_when(
+    str_detect(Variable, "1") ~ "Test_1",
+    str_detect(Variable, "2") ~ "Test_2"
+  )) |>
+  mutate(CIwidth = UpperCI-LowerCI) |>
+  select(Iteration, N_1, N_2, Parameter, Test, CIwidth) |>
+  pivot_wider(names_from = "Test", values_from = "CIwidth") |>
+  mutate(MeanCIwidth = (Test_1 + Test_2) / 2)
+```
 
 
 ## Obtaining an answer
@@ -202,21 +395,27 @@ Group discussion:
 
 ### Exercise
 
-1. Copy/modify your function to calculate and return three values:  the width of 95\% CI for the two prevalence parameters, and the average of these widths
+1. Use the code above to calculate three values per iteration:  the width of 95\% CI for the two prevalence parameters, and the average of these widths
 
 1. Calculate and analyse 50 datasets each for a total of 120, 150, 240 samples, where the samples are split 1/3 vs 2/3, 1/2 vs 1/2, and 2/3 vs 1/3 between the two populations.
 
 1. Visualise the results
 
-Tip:  use pbapply::pblapply to get a progress indicator and/or split the computation onto multiple processors.
-
 
 ## Additional considerations
 
+Discussion:
 
-## More reading
+- How should we deal with uncertainty in parameter values?  Integrate over them!
 
-If you are interested, you can see some related work here: [https://www.costmodds.org/projects/covetlabLCM/sample_size_calculation.html](https://www.costmodds.org/projects/covetlabLCM/sample_size_calculation.html)
+- How best to deal with multiple dimensions of N (i.e. total samples and distribution of samples)?
+
+- What about more complex scenarios e.g. 3 tests, including covariance?
+
+
+## Further reading
+
+If you are interested in making this more complicated (!), you can read through some related work here: [https://www.costmodds.org/projects/covetlabLCM/sample_size_calculation.html](https://www.costmodds.org/projects/covetlabLCM/sample_size_calculation.html)
 
 
 ```{r include=FALSE}
