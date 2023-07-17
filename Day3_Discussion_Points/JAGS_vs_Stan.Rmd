@@ -92,7 +92,7 @@ P <- 2L
 
 ```{r}
 library("runjags")
-library("rjags")
+runjags.options(silent.jags=TRUE, silent.runjags=TRUE)
 
 mod <- "model{
   for(p in 1:P){
