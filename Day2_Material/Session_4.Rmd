@@ -1,0 +1,396 @@
+---
+title: "Session 4"
+author: "Matt Denwood"
+date: '2023-07-13'
+output:
+  html_document: default
+  beamer_presentation:
+    pandoc_args:
+    - -t
+    - beamer
+    slide_level: 2
+theme: metropolis
+aspectratio: 169
+colortheme: seahorse
+header-includes: \input{../rsc/preamble}
+params:
+  presentation: no
+subtitle: Model Fit Assessment
+---
+
+```{r setup, include=FALSE}
+source("../rsc/setup.R")
+```
+
+
+# Bonus material! 
+
+## Looking at priors
+
+Sometimes it is useful to run a model with no data, as this allows us to look at the priors in effect for each parameter taking into account restrictions in the model, for example:
+
+```{r}
+library("runjags")
+
+mod <- "model{
+  for(p in 1:P){
+    Tally[1:4,p] ~ dmulti(prob[1:4,p], N[p])
+  
+    prob[1,p] <- (prev[p] * ((1-se[1])*(1-se[2]))) + ((1-prev[p]) * ((sp[1])*(sp[2])))
+    prob[2,p] <- (prev[p] * ((se[1])*(1-se[2]))) + ((1-prev[p]) * ((1-sp[1])*(sp[2])))
+    prob[3,p] <- (prev[p] * ((1-se[1])*(se[2]))) + ((1-prev[p]) * ((sp[1])*(1-sp[2])))
+    prob[4,p] <- (prev[p] * ((se[1])*(se[2]))) + ((1-prev[p]) * ((1-sp[1])*(1-sp[2])))
+
+    prev[p] ~ dbeta(1, 1)
+  }
+
+  for(t in 1:2){
+    se[t] ~ dbeta(1,1)
+    sp[t] ~ dbeta(1,1)T(1-se[t],)
+    youden[t] <- se[t] + sp[t] - 1
+  }
+
+  # There is no Tally in the data!!!
+  #data# N, P
+  #monitor# prev, se, sp, youden
+}"
+
+N <- c(300,200)
+P <- 2L
+
+results <- run.jags(mod, n.chains=2)
+results
+
+plot(results, vars="youden", plot.type="histogram")
+plot(results, vars=c("se","sp"), plot.type="histogram")
+```
+
+### Exercise
+
+One of these priors isn't as we might expect...!
+
+- Which one?
+- Can you fix the problem?
+
+
+## The Ones trick
+
+We can use the Zeros/Ones trick to specify a distribution that is not implemented directly in JAGS - and if you google it then this is what you will find.  BUT we can also use it to implement a custom accept/reject step:
+
+```{r}
+mod <- "model{
+  for(p in 1:P){
+    Tally[1:4,p] ~ dmulti(prob[1:4,p], N[p])
+  
+    prob[1,p] <- (prev[p] * ((1-se[1])*(1-se[2]))) + ((1-prev[p]) * ((sp[1])*(sp[2])))
+    prob[2,p] <- (prev[p] * ((se[1])*(1-se[2]))) + ((1-prev[p]) * ((1-sp[1])*(sp[2])))
+    prob[3,p] <- (prev[p] * ((1-se[1])*(se[2]))) + ((1-prev[p]) * ((sp[1])*(1-sp[2])))
+    prob[4,p] <- (prev[p] * ((se[1])*(se[2]))) + ((1-prev[p]) * ((1-sp[1])*(1-sp[2])))
+
+    prev[p] ~ dbeta(1, 1)
+  }
+
+  for(t in 1:2){
+    se[t] ~ dbeta(1,1)
+    sp[t] ~ dbeta(1,1)
+    youden[t] <- se[t] + sp[t] - 1
+    
+    ## Implement a custom accept/reject step:
+    constraint[t] <- ifelse(se[t]+sp[t] >= 1, 1, 0)
+    Ones[t] ~ dbern(constraint[t])
+  }
+
+  # There is still no Tally in the data, but now we add Ones:
+  #data# N, P, Ones
+  #monitor# prev, se, sp, youden
+}"
+
+N <- c(300,200)
+P <- 2L
+Ones <- c(1L, 1L)
+
+results <- run.jags(mod, n.chains=2)
+results
+
+plot(results, vars="youden", plot.type="histogram")
+plot(results, vars=c("se","sp"), plot.type="histogram")
+```
+
+Note:  this should probably be the standard way of doing this (I think?)
+
+
+# Parsimony
+
+## Occam's (or Ockham’s) razor
+
+“entia non sunt multiplicanda praeter necessitatem”
+
+[“entities must not be multiplied beyond necessity”]
+
+The simplest explanation that adequately describes the data should be preferred
+
+If we add more and more parameters to a model we (should) always get a better and better fit until the model is saturated
+
+So should we exclude some parameters from the model on the basis that they don’t significantly improve model fit?
+
+In the context of Hui-Walter models, we are usually only interested in testing for inclusion of covariance parameters.
+
+NOTE:  this is a measure of relative fit, not absolute fit!!
+
+
+## Assessing parsimony
+
+1.  What is the likelihood of the model?
+
+- Usually we use deviance rather than likelihood…
+  - deviance = - 2 x logPosterior
+  - #monitor# deviance
+
+2. How many parameters are in the model?
+
+- A model with as many parameters as data points is a saturated model
+
+
+## Frequentist fit statistics
+
+Likelihood ratio test:  does adding a new parameter give us a significantly better fit than expected by chance?
+
+AIC:  Generalisation of LRT to non-nested models
+
+- AIC = 2k – 2ln(L)
+- Requires knowing how many parameters (k) are in each model
+
+
+## A Bayesian k
+
+Consider four stochastic parameters:
+
+1. prev ~ dbeta(1,1) :  Probably 1 parameter
+
+2. prev ~ dbeta(5,5)  :  A fraction of a parameter?
+	
+3. prev ~ dbeta(5000,5000)  :  Roughly zero parameters?
+  
+4. prev <- 0.5  :  Definitely zero parameters!
+
+
+## pD
+
+The ‘effective number of parameters’
+
+Caveats:
+
+- Accurate calculation depends on approximate normality in the posteriors 
+    - NOT POSSIBLE WITH MIXTURE MODELS
+    
+- Not invariant to re-parameterisation
+
+- Requires sample size of data to be much larger than pD
+
+- Sometimes comes out negative….
+  - Especially if strong prior/data conflict
+
+- There are multiple ways to calculate pD (and equivalents) with no real consensus on the ‘best’ approach...!
+
+
+## DIC
+
+"Deviance Information Criterion"
+
+Model deviance:  $D = -2 \ log \ p(y | \theta)$
+
+Posterior mean deviance:  $\bar{D} = E[D]$
+
+pD = posterior mean deviance – deviance evaluated at posterior mean of the parameters
+
+$pD = \bar{D} - D(\bar{\theta})$
+
+DIC = Goodness of fit + complexity:
+
+$DIC = \bar{D} + pD$
+
+Spiegelhalter, D. J., Best, N. G., Carlin, B. P., & Linde, A. van der. (2002). Bayesian Measures of Model Complexity and Fit. Journal of the Royal Statistical Society. Series B (Statistical Methodology), 64(4), 583-639. Blackwell Publishing for the Royal Statistical Society. http://www.jstor.org/stable/3088806
+
+
+### DIC variants
+
+DIC/pD is not consistent between software!!!
+
+Original Spiegelhalter et al. definition of pD - used by WinBUGS and OpenBUGS
+
+Plummer (2002) definition of pD - used by rjags and runjags
+
+[Plummer, M. (2002), Discussion of the paper by Spiegelhalter et al. Journal of the Royal Statistical Society Series B 64, 620.]
+
+
+Gelman et al (2004) definition of pD - easy to calculate from any MCMC output; 
+used by r2jags and others
+
+[Gelman, A., Carlin, J. B., Stern, H. S., & Rubin, D. B. (2004). Bayesian Data Analysis (2nd ed.). 	Chapman and Hall/CRC.]
+
+
+Plummer (2008) definition of penalized expected deviance (PED) - also used by rjags and runjags
+
+[Plummer, M. (2008) Penalized loss functions for Bayesian model comparison. Biostatistics doi: 	10.1093/biostatistics/kxm049]
+
+Rule of thumb:  "when there are multiple ways of doing the same thing, it is a good indication that none of them work very well" 
+
+### Using DIC (Plummer [2002; 2008] definitions)
+
+```{r}
+mod <- "model{
+  for(p in 1:P){
+    Tally[1:4,p] ~ dmulti(prob[1:4,p], N[p])
+  
+    prob[1,p] <- (prev[p] * ((1-se[1])*(1-se[2]))) + ((1-prev[p]) * ((sp[1])*(sp[2])))
+    prob[2,p] <- (prev[p] * ((se[1])*(1-se[2]))) + ((1-prev[p]) * ((1-sp[1])*(sp[2])))
+    prob[3,p] <- (prev[p] * ((1-se[1])*(se[2]))) + ((1-prev[p]) * ((sp[1])*(1-sp[2])))
+    prob[4,p] <- (prev[p] * ((se[1])*(se[2]))) + ((1-prev[p]) * ((1-sp[1])*(1-sp[2])))
+
+    prev[p] ~ dbeta(1, 1)
+  }
+
+  for(t in 1:2){
+    se[t] ~ dbeta(1,1)
+    sp[t] ~ dbeta(1,1)T(1-se[t],)
+  }
+
+  #data# Tally, N, P
+  #monitor# prev, se, sp, deviance, dic, ped
+}"
+
+Tally <- structure(c(205, 22, 26, 47, 142, 39, 31, 88), .Dim = c(4, 2))
+N <- apply(Tally,2,sum)
+P <- 2L
+
+## NOTE: the default method="rjags" seems to have a bug!
+run.jags(mod, n.chains=2, method="interruptible")
+```
+
+
+### Interpretation
+
+Smaller is better:  smaller deviance and/or fewer parameters
+
+Only makes sense as a relative comparison of parameters FOR THE SAME DATA
+
+Rule of thumb:
+
+- A difference in DIC of < 5 is probably meaningless
+- A difference in DIC of 5-10 suggests the preferred model
+- A difference in DIC of >10 is more conclusive
+
+It is the ABSOLUTE DIFFERENCE that matters:  the specific values and/or ratios are meaningless
+
+Notes:
+
+- Theoretical derivation is based on hierarchical normal models
+- Has proven in practice to be more generally useful with GL(M)M ...?
+- Utility has NOT been proven in the general case - and there are strong theoretical issues with using it with mixture models
+- The model deviance is a Monte Carlo approximation
+- DIC can be improved by priors that match the data!!!
+- All models are wrong anyway...
+- Always look for potentially important differences in posterior inference from competing models
+- Always include variables on biological plausibility first
+
+
+## WAIC
+
+"Widely Applicable Information Criterion"
+
+Similar use/interpretation to DIC but with fewer drawbacks:
+
+- Theory is better understood (approximation to LOO)
+- WAIC is valid for singular models e.g. mixture models
+- Calculation is based on the mean and variance of the individual data-point contributions to the likelihood
+
+
+Features/problems:
+
+- Requires the ‘focus’ of interest to be specified explicitly
+- Allows more specific ‘tailoring’ of the precise aspect of the model fit that we are assessing
+- Also requires an extra bit of thinking
+
+
+References:
+
+- Vehtari and Gelman, 2014:  WAIC and cross-validation in Stan 
+- Vehtari, Gelman and Gaby, 2016:  Practical Bayesian model evaluation using leave-one-out cross-validation and WAIC 
+
+
+### Using WAIC
+
+We need to specify the log likelihood (density) of interest:
+
+```{r}
+mod <- "model{
+  for(p in 1:P){
+    Tally[1:4,p] ~ dmulti(prob[1:4,p], N[p])
+    
+    ## Needed for WAIC:
+    for(i in 1:4){
+      log_lik[i,p] <- logdensity.bin(Tally[i,p], prob[i,p], N[p])
+    }
+  
+    prob[1,p] <- (prev[p] * ((1-se[1])*(1-se[2]))) + ((1-prev[p]) * ((sp[1])*(sp[2])))
+    prob[2,p] <- (prev[p] * ((se[1])*(1-se[2]))) + ((1-prev[p]) * ((1-sp[1])*(sp[2])))
+    prob[3,p] <- (prev[p] * ((1-se[1])*(se[2]))) + ((1-prev[p]) * ((sp[1])*(1-sp[2])))
+    prob[4,p] <- (prev[p] * ((se[1])*(se[2]))) + ((1-prev[p]) * ((1-sp[1])*(1-sp[2])))
+
+    prev[p] ~ dbeta(1, 1)
+  }
+
+  for(t in 1:2){
+    se[t] ~ dbeta(1,1)
+    sp[t] ~ dbeta(1,1)T(1-se[t],)
+  }
+
+  #data# Tally, N, P
+  #monitor# prev, se, sp, log_lik, dic, ped
+}"
+
+Tally <- structure(c(205, 22, 26, 47, 142, 39, 31, 88), .Dim = c(4, 2))
+N <- apply(Tally,2,sum)
+P <- 2L
+
+results <- run.jags(mod, n.chains=2, method="interruptible")
+```
+
+Then we need to do some post-processing:
+
+```{r}
+get_waic <- function(results){
+  
+  stopifnot(inherits(results,"runjags"))
+  log_lik <- combine.mcmc(results, vars="log_lik")
+  mean_lik <- apply(exp(log_lik),2,mean)
+  var_log_lik <- apply(log_lik,2,var)
+  
+  N <- length(mean_lik)
+  lpd <- log(mean_lik)
+  elpd <- lpd - var_log_lik
+  waic <- -2 * elpd
+  se <- (var(waic) / N)^0.5
+	
+  return(list(waic=-2*sum(elpd), p_waic=sum(var_log_lik)))
+}
+
+get_waic(results)
+extract(results, "DIC")
+extract(results, "PED")
+```
+
+NOTE: JAGS 5 will make this easier...
+
+## Exercise
+
+1. Create some data with 2 populations and 3 conditionally independent tests
+
+1. Run a model with no correlation terms, and record the DIC/PED/WAIC
+
+1. Run 3 models, each with a correlation term between two of the tests (for every combination), and record the DIC/PED/WAIC
+
+1. Which model wins?
+
+1. Repeat the exercise - is the result the same?
+

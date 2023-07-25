@@ -1,0 +1,232 @@
+---
+title: "JAGS vs Stan"
+author: "Matt Denwood"
+date: '2023-07-14'
+output:
+  html_document: default
+  beamer_presentation:
+    pandoc_args:
+    - -t
+    - beamer
+    slide_level: 2
+theme: metropolis
+aspectratio: 169
+colortheme: seahorse
+header-includes: \input{../rsc/preamble}
+params:
+  presentation: no
+subtitle: And MCMC vs HMC
+---
+
+```{r setup, include=FALSE}
+source("../rsc/setup.R")
+```
+
+# Theory
+
+## MCMC
+
+Markov chain Monte Carlo
+
+- A very old technique (Metropolis, 1950 ish)
+- Only requires us to be able to calculate a likelihood
+- Allows any type of parameter (discrete, continuous, whatever)
+- Different sampling strategies exist e.g. conjugate, slice, metropolis, etc, and are often used together in Gibbs sampling
+- Autocorrelation i.e. quality of the samples depends on the model
+
+
+## HMC
+
+Hamiltonian Monte Carlo
+
+- A more modern technique (generalisation in 1996):  kind of an evolved subset of MCMC
+- Requires us to be able to calculate the likelihood AND define the first derivative of the likelihood
+- Limited to only differentiable likelihood surfaces (i.e. continuous parameters with smooth likelihood surfaces)
+- Typically a single sampling strategy is used for all parameters in a model
+- Autocorrelation i.e. quality of the samples is more consistent between models
+
+# Software: JAGS vs Stan
+
+## Headlines
+
+- JAGS uses MCMC (Gibbs), Stan uses HMC (NUTS)
+
+- JAGS models are written in BUGS, Stan models are written in C++ (ish)
+
+- JAGS allows discrete parameters, Stan allows only continuous parameters
+
+- JAGS allowes a rejection step using the zeros trick, Stan has an explicit rejection step
+
+- JAGS requires a separate JAGS installation, Stan requires C++ compilers
+
+- Compilation of models takes longer for Stan, but can be re-used for different datasets
+
+- Compilation of models is faster for JAGS, but is tied to a specific dataset
+
+- Stan models can be embedded within an R package, JAGS models cannot be self-contained
+
+- JAGS produces samples faster, Stan must calculate derivatives and is therefore slower
+
+- JAGS produces higher quality samples for simple models, Stan produces higher quality samples for complex models
+
+- A coding mistake in JAGS causes an error, a coding mistake in Stan may cause a segfault!
+
+
+## Comparison
+
+The questions to ask are:
+
+1. Is the inference the same?
+1. Which runs fastest?
+1. Which produces higher effective size?
+1. What is the "independent sample per second" rate?
+
+```{r}
+library("coda")
+Tally <- structure(c(205, 22, 26, 47, 142, 39, 31, 88), .Dim = c(4, 2))
+N <- apply(Tally,2,sum)
+P <- 2L
+```
+
+## 2-test, 2-pop:  JAGS
+
+```{r}
+library("runjags")
+runjags.options(silent.jags=TRUE, silent.runjags=TRUE)
+
+mod <- "model{
+  for(p in 1:P){
+    Tally[1:4,p] ~ dmulti(prob[1:4,p], N[p])
+    
+    prob[1,p] <- (prev[p] * ((1-se[1])*(1-se[2]))) + ((1-prev[p]) * ((sp[1])*(sp[2])))
+    prob[2,p] <- (prev[p] * ((se[1])*(1-se[2]))) + ((1-prev[p]) * ((1-sp[1])*(sp[2])))
+    prob[3,p] <- (prev[p] * ((1-se[1])*(se[2]))) + ((1-prev[p]) * ((sp[1])*(1-sp[2])))
+    prob[4,p] <- (prev[p] * ((se[1])*(se[2]))) + ((1-prev[p]) * ((1-sp[1])*(1-sp[2])))
+
+    prev[p] ~ dbeta(1, 1)
+  }
+
+  for(t in 1:2){
+    se[t] ~ dbeta(1,1)
+    sp[t] ~ dbeta(1,1)
+    constraint[t] <- ifelse(se[t]+sp[t] >= 1, 1, 0)
+    Ones[t] ~ dbern(constraint[t])
+  }
+
+  #data# Tally, N, P, Ones
+  #monitor# prev, se, sp
+}"
+
+Ones <- c(1,1)
+jags_total <- system.time({
+  results_jags <- run.jags(mod, n.chains=2, adapt=1000, burnin=1000, sample=5000, summarise=FALSE)
+})
+mcmc <- as.mcmc.list(results_jags, vars=c("se","sp","prev"))
+```
+
+
+
+## 2-test, 2-pop:  Stan
+
+
+```{r}
+library("rstan")
+
+cat("
+data {
+  int<lower=0> P;
+  int Tally[4,P];
+}
+parameters {
+  vector<lower=0,upper=1>[2] se;
+  vector<lower=0,upper=1>[2] sp;
+  vector<lower=0,upper=1>[P] prev;
+}
+transformed parameters {
+  matrix[4, P] prob;
+
+  for(p in 1:P){
+    prob[1,p] = (prev[p] * ((1-se[1])*(1-se[2]))) + ((1-prev[p]) * ((sp[1])*(sp[2])));
+    prob[2,p] = (prev[p] * ((se[1])*(1-se[2]))) + ((1-prev[p]) * ((1-sp[1])*(sp[2])));
+    prob[3,p] = (prev[p] * ((1-se[1])*(se[2]))) + ((1-prev[p]) * ((sp[1])*(1-sp[2])));
+    prob[4,p] = (prev[p] * ((se[1])*(se[2]))) + ((1-prev[p]) * ((1-sp[1])*(1-sp[2])));
+  }
+}
+model {
+  for(p in 1:P){
+    Tally[,p] ~ multinomial(prob[,p]);
+    prev[p] ~ beta(1,1);
+  }
+
+  for(t in 1:2){
+    se[t] ~ beta(1,1);
+    sp[t] ~ beta(1,1);
+    if((se[t]+sp[t]) < 1.0) reject(\"label switching\");
+
+  }
+
+}
+", file="hwm.stan")
+
+options(mc.cores = 1L)
+
+stan_comp <- system.time({
+  model <- stan_model("hwm.stan")
+})
+
+stan_run <- system.time({
+  results_stan <- sampling(model, list(P=P,Tally=Tally), iter=7000, warmup=2000, chains=2)
+})
+
+hmc <- extract(results_stan, pars=c("se","sp","prev"), permuted=FALSE)
+hmc <- as.mcmc.list(as.mcmc(hmc[,1,]), as.mcmc(hmc[,2,]))
+```
+
+
+## Results comparison
+
+```{r}
+summary(results_jags)
+summary(results_stan)$summary
+```
+
+
+## Performance comparison
+
+Total time:
+
+```{r}
+jags_total
+stan_comp
+stan_run
+```
+Sample quality:
+
+```{r}
+effectiveSize(mcmc)
+effectiveSize(hmc)
+```
+
+Number of independent samples per second:
+
+```{r}
+mean(effectiveSize(mcmc)) / jags_total["elapsed"]
+mean(effectiveSize(hmc)) / stan_run["elapsed"]
+mean(effectiveSize(hmc)) / (stan_comp["elapsed"]+stan_run["elapsed"])
+```
+
+## Conclusion
+
+The results are the same!
+
+The Stan model is a bit more complex to write and use than the JAGS model (or at least, I think so, but then maybe I am biased!)
+
+JAGS produces lower quality samples but more quickly than Stan
+
+However, JAGS will produce relatively higher quality samples for simpler models, and relatively lower quality samples for more complex models
+
+[Note: this is not an entirely fair comparison, due to Rmarkdown etc overheads]
+
+# Position paper topics
+
+Suggestions?

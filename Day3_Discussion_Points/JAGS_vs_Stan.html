@@ -9,11 +9,11 @@
 <meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
 
 
-<meta name="author" content="Giles Innocent" />
+<meta name="author" content="Matt Denwood" />
 
-<meta name="date" content="2023-07-12" />
+<meta name="date" content="2023-07-14" />
 
-<title>Madrid Advanced training: day 1</title>
+<title>JAGS vs Stan</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -256,6 +256,7 @@ if (window.hljs) {
 
 
 
+
 <style type="text/css">
 .main-container {
 max-width: 940px;
@@ -277,6 +278,9 @@ outline: none;
 summary {
 display: list-item;
 }
+details > summary > p:only-child {
+display: inline;
+}
 pre code {
 padding: 0;
 }
@@ -295,23 +299,17 @@ overflow-y: auto;
 border: 1px solid #ddd;
 border-radius: 4px;
 }
-.tabset-dropdown > .nav-tabs > li.active:before {
-content: "";
+.tabset-dropdown > .nav-tabs > li.active:before, .tabset-dropdown > .nav-tabs.nav-tabs-open:before {
+content: "\e259";
 font-family: 'Glyphicons Halflings';
 display: inline-block;
 padding: 10px;
 border-right: 1px solid #ddd;
 }
 .tabset-dropdown > .nav-tabs.nav-tabs-open > li.active:before {
-content: "";
-border: none;
-}
-.tabset-dropdown > .nav-tabs.nav-tabs-open:before {
-content: "";
+content: "\e258";
 font-family: 'Glyphicons Halflings';
-display: inline-block;
-padding: 10px;
-border-right: 1px solid #ddd;
+border: none;
 }
 .tabset-dropdown > .nav-tabs > li.active {
 display: block;
@@ -352,856 +350,407 @@ display: none;
 
 
 
-<h1 class="title toc-ignore">Madrid Advanced training: day 1</h1>
-<h4 class="author">Giles Innocent</h4>
-<h4 class="date">2023-07-12</h4>
+<h1 class="title toc-ignore">JAGS vs Stan</h1>
+<h3 class="subtitle">And MCMC vs HMC</h3>
+<h4 class="author">Matt Denwood</h4>
+<h4 class="date">2023-07-14</h4>
 
 </div>
 
 
-<div id="introduction" class="section level2">
-<h2>Introduction</h2>
-<p>“Hello”</p>
+<div id="theory" class="section level1">
+<h1>Theory</h1>
+<div id="mcmc" class="section level2">
+<h2>MCMC</h2>
+<p>Markov chain Monte Carlo</p>
 <ul>
-<li>Building on the basic course.</li>
-<li><strong>NOT</strong> lecture:practical.</li>
-<li>More intro: practical or discussion.</li>
-<li>You’ll get more out of it if you try the exercises
-<strong>before</strong> looking at the sample code.</li>
-</ul>
-</div>
-<div id="simulation" class="section level2">
-<h2>Simulation</h2>
-<ul>
-<li>Why simulate?</li>
-<li>How to simulate
-<ul>
-<li>within JAGS</li>
-<li>R or equivalent</li>
-<li>from an identical model to the analysis model</li>
-<li>from a different model to the analysis</li>
-</ul></li>
-</ul>
-</div>
-<div id="simulating-in-r" class="section level2">
-<h2>Simulating in R</h2>
-<ul>
-<li>Functions like rbinom, rpois, rnorm, etc.</li>
-<li>All take a first parameter, n the number of data points you wish to
-simulate</li>
-<li>E.G. Hui-Walter paradigm:</li>
-</ul>
-<pre class="r"><code>  set.seed(1)
-  n.sim &lt;- 1
-  prev &lt;- c(0.25, 0.8)
-  Se.1 &lt;- Se.2 &lt;- 0.8
-  Sp.1 &lt;- Sp.2 &lt;- 0.95
-  n.sampled &lt;- c(100, 100)
-  test.results &lt;- data.frame(pp=numeric(length(prev)),
-                             pn=numeric(length(prev)),
-                             np=numeric(length(prev)),
-                             nn=numeric(length(prev)))
-  for(pop in 1:length(prev)){
-    n.pos &lt;- rbinom(n.sim,n.sampled[pop],prev[pop])
-    test.results$pp[pop] &lt;- rbinom(n.sim, n.pos, Se.1*Se.2) + 
-      rbinom(n.sim, n.sampled[pop]-n.pos, (1-Sp.1)*(1-Sp.2))
-    test.results$pn[pop] &lt;- rbinom(n.sim, n.pos, Se.1*(1-Se.2)) + 
-      rbinom(n.sim, n.sampled[pop]-n.pos, (1-Sp.1)*Sp.2)
-    test.results$np[pop] &lt;- rbinom(n.sim, n.pos, (1-Se.1)*Se.2) + 
-      rbinom(n.sim, n.sampled[pop]-n.pos, Sp.1*(1-Sp.2))
-    test.results$nn[pop] &lt;- n.sampled[pop]-test.results$pp[pop]-
-      test.results$pn[pop] -test.results$np[pop]
-  }</code></pre>
-<ul>
-<li>What is wrong with this example?</li>
-</ul>
-<div id="a-better-version" class="section level3">
-<h3>A better version</h3>
-<pre class="r"><code>  set.seed(1)
-  n.sim &lt;- 1
-  prev &lt;- c(0.25, 0.8)
-  Se.1 &lt;- Se.2 &lt;- 0.8
-  Sp.1 &lt;- Sp.2 &lt;- 0.95
-  cond.prob.pos &lt;- c(Se.1*Se.2, # probability a positive individual tests ++ 
-                     (1-Se.1)*Se.2, # probability a positive individual tests -+ 
-                     Se.1*(1-Se.2), # probability a positive individual tests + 
-                     (1-Se.1)*(1-Se.2)) # probability a positive individual tests --
-  cond.prob.neg &lt;- c((1-Sp.1)*(1-Sp.2), # probability a negative individual tests ++
-                     Sp.1*(1-Sp.2), # probability a negative individual tests -+
-                     (1-Sp.1)*Sp.2, # probability a negative individual tests +-
-                     Sp.1*Sp.2) # probability a negative individual tests --
-  n.sampled &lt;- c(100, 100)
-  test.results &lt;- matrix(nrow=4,ncol=length(prev), dimnames=list(test.result = c(&quot;pp&quot;,&quot;np&quot;,&quot;pn&quot;,&quot;nn&quot;), population = c(&quot;a&quot;,&quot;b&quot;)))
-  for(pop in 1:length(prev)){
-    n.pos &lt;- rbinom(n.sim,n.sampled[pop],prev[pop])
-    n.neg &lt;- n.sampled[pop] - n.pos
-    test.results[,pop] &lt;- rmultinom(n.sim, n.pos, cond.prob.pos) + 
-      rmultinom(n.sim, n.neg, cond.prob.neg)
-  }</code></pre>
-</div>
-</div>
-<div id="example" class="section level2">
-<h2>Example</h2>
-<ul>
-<li>3 tests; 1 population</li>
-<li>7 parameters:
-<ul>
-<li>3 test sensitivities</li>
-<li>3 test specificities</li>
-<li>1 prevalence</li>
-</ul></li>
-<li><span class="math inline">\(2^3\)</span> combinations: 7 df in the
-data
-<ul>
-<li>is this identifiable?</li>
-<li>are the estimates unbiased?</li>
-<li>what if prevalence is very low ~1%?</li>
-<li>even with 1000 individuals only ~10 are positive</li>
-<li>can’t estimate Se well</li>
-<li>does a biased estimate of Se bias our estimates of Sp and/or
-prevalence?</li>
-</ul></li>
-</ul>
-</div>
-<div id="example-r-code" class="section level2">
-<h2>Example R code</h2>
-<pre class="r"><code>simulation.3.test &lt;- function(prev,n.sampled,Se,Sp) {
-  if((length(prev)!=1)&amp;(length(n.sampled)!=1)&amp;(length(Se)!=3)&amp;(length(Sp)!=3)) {
-    print(&quot;Error in parameters sent to simulation.3.test&quot;)
-    stop()
-  }
-  n.pos &lt;- rbinom(1,n.sampled,prev)
-  n.neg &lt;- n.sampled - n.pos
-  test.1 &lt;- c(rbinom(n.pos,1,Se[1]), rbinom(n.neg,1,(1-Sp[1])))
-  test.2 &lt;- c(rbinom(n.pos,1,Se[2]), rbinom(n.neg,1,(1-Sp[2])))
-  test.3 &lt;- c(rbinom(n.pos,1,Se[3]), rbinom(n.neg,1,(1-Sp[3])))
-  test.results &lt;- c(
-    sum(test.1 &amp; test.2 &amp; test.3),
-    sum(test.1 &amp; test.2 &amp; !test.3),
-    sum(test.1 &amp; !test.2 &amp; test.3),
-    sum(test.1 &amp; !test.2 &amp; !test.3),
-    sum(!test.1 &amp; test.2 &amp; test.3),
-    sum(!test.1 &amp; test.2 &amp; !test.3),
-    sum(!test.1 &amp; !test.2 &amp; test.3),
-    sum(!test.1 &amp; !test.2 &amp; !test.3))
-  names(test.results) &lt;- c(&quot;ppp&quot;, &quot;ppn&quot;, &quot;pnp&quot;, &quot;pnn&quot;, &quot;npp&quot;, &quot;npn&quot;, &quot;nnp&quot;, &quot;nnn&quot;)
-  return(test.results)
-}</code></pre>
-</div>
-<div id="example-rjags-code" class="section level2">
-<h2>Example R/JAGS code</h2>
-<pre class="r"><code>cat(
-&quot;model{
-  # Likelihood part:
-  p.test.result[1] &lt;-prev*Se[1]*Se[2]*Se[3] + (1-prev)*(1-Sp[1])*(1-Sp[2])*(1-Sp[3]) #ppp
-  p.test.result[2] &lt;-prev*Se[1]*Se[2]*(1-Se[3]) + (1-prev)*(1-Sp[1])*(1-Sp[2])*Sp[3] #ppn
-  p.test.result[3] &lt;-prev*Se[1]*(1-Se[2])*Se[3] + (1-prev)*(1-Sp[1])*Sp[2]*(1-Sp[3]) #pnp
-  p.test.result[4] &lt;-prev*Se[1]*(1-Se[2])*(1-Se[3]) + (1-prev)*(1-Sp[1])*Sp[2]*Sp[3] #pnn
-  p.test.result[5] &lt;-prev*(1-Se[1])*Se[2]*Se[3] + (1-prev)*Sp[1]*(1-Sp[2])*(1-Sp[3]) #npp
-  p.test.result[6] &lt;-prev*(1-Se[1])*Se[2]*(1-Se[3]) + (1-prev)*Sp[1]*(1-Sp[2])*Sp[3] #npn
-  p.test.result[7] &lt;-prev*(1-Se[1])*(1-Se[2])*Se[3] + (1-prev)*Sp[1]*Sp[2]*(1-Sp[3]) #nnp
-  p.test.result[8] &lt;-prev*(1-Se[1])*(1-Se[2])*(1-Se[3]) + (1-prev)*Sp[1]*Sp[2]*Sp[3] #nnn
-  test.results ~dmulti(p.test.result, n.tested)
-    
-  # Prior part:
-  prev ~ dbeta(1,1)
-  for(test in 1:3)  {
-    Se[test] ~dbeta(1,1)
-    Sp[test] ~dbeta(1,1)
-  }
-  
-  # Hooks for automatic integration with R:
-  #data# test.results, n.tested
-  #monitor# prev, Se, Sp
-}
-&quot;, file = &quot;three.test.jags&quot;)
-
-prev&lt;- 0.50
-n.tested &lt;- 1000
-Se &lt;- c(0.8,0.8,0.95)
-Sp &lt;- c(0.95,0.99,0.8)
-test.results &lt;- simulation.3.test(prev,n.tested,Se,Sp)
-
-runjags.options(silent.jags=TRUE)
-n.burnin &lt;- n.sample &lt;- 5000
-results.jags &lt;- run.jags(&#39;three.test.jags&#39;, n.chains=2, burnin=n.burnin, sample=n.sample)</code></pre>
-<pre><code>## Loading required namespace: rjags</code></pre>
-<pre><code>## Warning: No initial values were provided - JAGS will use the same initial
-## values for all chains</code></pre>
-<pre><code>## Finished running the simulation</code></pre>
-<pre class="r"><code>pander(summary(results.jags))</code></pre>
-<table>
-<caption>Table continues below</caption>
-<colgroup>
-<<<<<<< HEAD
-<col width="14%" />
-<col width="14%" />
-<col width="11%" />
-<col width="12%" />
-<col width="11%" />
-<col width="12%" />
-<col width="8%" />
-<col width="14%" />
-=======
-<col width="15%" />
-<col width="12%" />
-<col width="11%" />
-<col width="12%" />
-<col width="11%" />
-<col width="13%" />
-<col width="8%" />
-<col width="15%" />
->>>>>>> 719ba49690e1606c6610b7a39dad8e80f21aac0f
-</colgroup>
-<thead>
-<tr class="header">
-<th align="center"> </th>
-<th align="center">Lower95</th>
-<th align="center">Median</th>
-<th align="center">Upper95</th>
-<th align="center">Mean</th>
-<th align="center">SD</th>
-<th align="center">Mode</th>
-<th align="center">MCerr</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="center"><strong>prev</strong></td>
-<<<<<<< HEAD
-<td align="center">0.4651</td>
-<td align="center">0.4996</td>
-<td align="center">0.5366</td>
-<td align="center">0.4998</td>
-<td align="center">0.01829</td>
-<td align="center">NA</td>
-<td align="center">0.0002815</td>
-</tr>
-<tr class="even">
-<td align="center"><strong>Se[1]</strong></td>
-<td align="center">0.03405</td>
-<td align="center">0.4167</td>
-<td align="center">0.8244</td>
-<td align="center">0.4253</td>
-<td align="center">0.3693</td>
-<td align="center">NA</td>
-<td align="center">0.005343</td>
-</tr>
-<tr class="odd">
-<td align="center"><strong>Se[2]</strong></td>
-<td align="center">1.469e-05</td>
-<td align="center">0.375</td>
-<td align="center">0.8126</td>
-<td align="center">0.3987</td>
-<td align="center">0.3857</td>
-<td align="center">NA</td>
-<td align="center">0.005905</td>
-</tr>
-<tr class="even">
-<td align="center"><strong>Se[3]</strong></td>
-<td align="center">0.1566</td>
-<td align="center">0.5834</td>
-<td align="center">0.9722</td>
-<td align="center">0.5684</td>
-<td align="center">0.3823</td>
-<td align="center">NA</td>
-<td align="center">0.005942</td>
-</tr>
-<tr class="odd">
-<td align="center"><strong>Sp[1]</strong></td>
-<td align="center">0.1748</td>
-<td align="center">0.5968</td>
-<td align="center">0.9656</td>
-<td align="center">0.5749</td>
-<td align="center">0.3692</td>
-<td align="center">NA</td>
-<td align="center">0.005186</td>
-</tr>
-<tr class="even">
-<td align="center"><strong>Sp[2]</strong></td>
-<td align="center">0.1882</td>
-<td align="center">0.6248</td>
-<td align="center">0.9999</td>
-<td align="center">0.6017</td>
-<td align="center">0.3852</td>
-<td align="center">NA</td>
-<td align="center">0.006196</td>
-</tr>
-<tr class="odd">
-<td align="center"><strong>Sp[3]</strong></td>
-<td align="center">0.02997</td>
-<td align="center">0.4151</td>
-<td align="center">0.8447</td>
-<td align="center">0.4311</td>
-<td align="center">0.3819</td>
-<td align="center">NA</td>
-<td align="center">0.005718</td>
-</tr>
-</tbody>
-</table>
-<table style="width:69%;">
-=======
-<td align="center">0.4607</td>
-<td align="center">0.4983</td>
-<td align="center">0.5328</td>
-<td align="center">0.4986</td>
-<td align="center">0.01852</td>
-<td align="center">NA</td>
-<td align="center">0.000307</td>
-</tr>
-<tr class="even">
-<td align="center"><strong>Se[1]</strong></td>
-<td align="center">0.7526</td>
-<td align="center">0.7949</td>
-<td align="center">0.8353</td>
-<td align="center">0.7943</td>
-<td align="center">0.02144</td>
-<td align="center">NA</td>
-<td align="center">0.0003222</td>
-</tr>
-<tr class="odd">
-<td align="center"><strong>Se[2]</strong></td>
-<td align="center">0.7398</td>
-<td align="center">0.7845</td>
-<td align="center">0.8267</td>
-<td align="center">0.7839</td>
-<td align="center">0.02244</td>
-<td align="center">NA</td>
-<td align="center">0.0003504</td>
-</tr>
-<tr class="even">
-<td align="center"><strong>Se[3]</strong></td>
-<td align="center">0.9251</td>
-<td align="center">0.9514</td>
-<td align="center">0.9728</td>
-<td align="center">0.9504</td>
-<td align="center">0.01228</td>
-<td align="center">NA</td>
-<td align="center">0.0001909</td>
-</tr>
-<tr class="odd">
-<td align="center"><strong>Sp[1]</strong></td>
-<td align="center">0.918</td>
-<td align="center">0.9445</td>
-<td align="center">0.9684</td>
-<td align="center">0.9438</td>
-<td align="center">0.01301</td>
-<td align="center">NA</td>
-<td align="center">0.000191</td>
-</tr>
-<tr class="even">
-<td align="center"><strong>Sp[2]</strong></td>
-<td align="center">0.9725</td>
-<td align="center">0.9874</td>
-<td align="center">1</td>
-<td align="center">0.9866</td>
-<td align="center">0.007859</td>
-<td align="center">NA</td>
-<td align="center">0.0001251</td>
-</tr>
-<tr class="odd">
-<td align="center"><strong>Sp[3]</strong></td>
-<td align="center">0.7697</td>
-<td align="center">0.8131</td>
-<td align="center">0.8533</td>
-<td align="center">0.8129</td>
-<td align="center">0.02134</td>
-<td align="center">NA</td>
-<td align="center">0.0003221</td>
-</tr>
-</tbody>
-</table>
-<table style="width:71%;">
->>>>>>> 719ba49690e1606c6610b7a39dad8e80f21aac0f
-<colgroup>
-<col width="16%" />
-<col width="13%" />
-<col width="11%" />
-<col width="16%" />
-<<<<<<< HEAD
-<col width="11%" />
-=======
-<col width="12%" />
->>>>>>> 719ba49690e1606c6610b7a39dad8e80f21aac0f
-</colgroup>
-<thead>
-<tr class="header">
-<th align="center"> </th>
-<th align="center">MC%ofSD</th>
-<th align="center">SSeff</th>
-<th align="center">AC.10</th>
-<th align="center">psrf</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="center"><strong>prev</strong></td>
-<<<<<<< HEAD
-<td align="center">1.5</td>
-<td align="center">4225</td>
-<td align="center">0.008808</td>
-<td align="center">1.01</td>
-</tr>
-<tr class="even">
-<td align="center"><strong>Se[1]</strong></td>
-<td align="center">1.4</td>
-<td align="center">4779</td>
-<td align="center">0.00493</td>
-<td align="center">51.42</td>
-</tr>
-<tr class="odd">
-<td align="center"><strong>Se[2]</strong></td>
-<td align="center">1.5</td>
-<td align="center">4265</td>
-<td align="center">0.009375</td>
-<td align="center">56.27</td>
-=======
-<td align="center">1.7</td>
-<td align="center">3641</td>
-<td align="center">-0.008379</td>
-<td align="center">1.002</td>
-</tr>
-<tr class="even">
-<td align="center"><strong>Se[1]</strong></td>
-<td align="center">1.5</td>
-<td align="center">4427</td>
-<td align="center">0.005174</td>
-<td align="center">1.002</td>
-</tr>
-<tr class="odd">
-<td align="center"><strong>Se[2]</strong></td>
-<td align="center">1.6</td>
-<td align="center">4100</td>
-<td align="center">0.01607</td>
-<td align="center">1.001</td>
->>>>>>> 719ba49690e1606c6610b7a39dad8e80f21aac0f
-</tr>
-<tr class="even">
-<td align="center"><strong>Se[3]</strong></td>
-<td align="center">1.6</td>
-<<<<<<< HEAD
-<td align="center">4139</td>
-<td align="center">0.02317</td>
-<td align="center">25.52</td>
-</tr>
-<tr class="odd">
-<td align="center"><strong>Sp[1]</strong></td>
-<td align="center">1.4</td>
-<td align="center">5068</td>
-<td align="center">-0.001755</td>
-<td align="center">51.69</td>
-=======
-<td align="center">4142</td>
-<td align="center">-0.001916</td>
-<td align="center">1</td>
-</tr>
-<tr class="odd">
-<td align="center"><strong>Sp[1]</strong></td>
-<td align="center">1.5</td>
-<td align="center">4640</td>
-<td align="center">-0.01501</td>
-<td align="center">0.9999</td>
->>>>>>> 719ba49690e1606c6610b7a39dad8e80f21aac0f
-</tr>
-<tr class="even">
-<td align="center"><strong>Sp[2]</strong></td>
-<td align="center">1.6</td>
-<<<<<<< HEAD
-<td align="center">3866</td>
-<td align="center">0.01438</td>
-<td align="center">55.53</td>
-=======
-<td align="center">3947</td>
-<td align="center">0.009844</td>
-<td align="center">1</td>
->>>>>>> 719ba49690e1606c6610b7a39dad8e80f21aac0f
-</tr>
-<tr class="odd">
-<td align="center"><strong>Sp[3]</strong></td>
-<td align="center">1.5</td>
-<<<<<<< HEAD
-<td align="center">4461</td>
-<td align="center">0.01183</td>
-<td align="center">54.17</td>
-=======
-<td align="center">4388</td>
-<td align="center">0.0113</td>
-<td align="center">1.001</td>
->>>>>>> 719ba49690e1606c6610b7a39dad8e80f21aac0f
-</tr>
-</tbody>
-</table>
-</div>
-<div id="how-good-is-our-posterior" class="section level2">
-<h2>How good is our posterior?</h2>
-<ul>
-<li>Eyeball posterior distribution</li>
-<li>Are the means (medians, modes?) close to the values used for the
-simulation</li>
-<li>If we wish to be more formal about this we would repeat teh
-simulation-analysis cycle many (400+) times
-<ul>
-<li>this takes a long time, typically</li>
-<li>which is a better (less biased) predictor: mean, median or mode</li>
-<li>are the 95% Credible Intervals true 95% Confidence Intervals</li>
-</ul></li>
-</ul>
-</div>
-<div id="posterior-predicted-p-values" class="section level2">
-<h2>Posterior predicted p-values</h2>
-<ul>
-<li>But we’re Bayesian aren’t we?</li>
-<li>Surely p-values belong to the frequentists!</li>
-<li>Sometimes it is useful to compare data to a null hypothesis</li>
-</ul>
-</div>
-<div id="calculating-a-posterior-predicted-p-value" class="section level2">
-<h2>Calculating a posterior predicted p-value</h2>
-<ul>
-<li>Simulate data based on the posterior distribution of the
-parameters</li>
-<li>Typically 1 data set per iteration, using all parameters of
-interest</li>
-<li>Define a metric/statistic to use</li>
-<li>Calculate the metric for both the original data and for each
-simulated data set</li>
-<li>The distribution of the metric from the simulated data sets
-represents its distribution under the null hypothesis that the model,
-and the posterior distributions are correct</li>
-<li>Hence how extreme are the data under this null hypothesis</li>
-<li>Low or high p-values (close to 0 or 1) give us cause for concern
-that the model is wrong.</li>
-<li>What metric should we use?</li>
-</ul>
-</div>
-<div id="quick-exercise" class="section level2">
-<h2>Quick exercise</h2>
-<ul>
-<li>Simulate some data ~N(0,1)</li>
-<li>Use JAGS to estimate the posterior for the mean and precision</li>
-<li>Use the mean and precision to generate some more data</li>
-<li><strong>Calculate</strong> the mean and variance of the samples</li>
-<li>Where do the mean and variance of the data sit wrt the samples?</li>
-<li>What happens if we mis-specify the priors?</li>
-</ul>
-</div>
-<div id="my-version" class="section level2">
-<h2>My version</h2>
-<pre class="r"><code>n.obs &lt;- 100
-obs &lt;- rnorm(n.obs,0,1)
-obs.mu &lt;- mean(obs)
-
-cat(
-&quot;model{
-  # Likelihood part:
-  for(i in 1:n.obs) {
-    obs[i] ~ dnorm(mu, tau)
-  }
-    
-  # Prior part:
-  mu ~ dnorm(prior.mu.mu, prior.mu.tau)
-  tau ~dgamma(0.001,0.001)
-  
-  # Simulation part
-  for(i in 1:n.obs) {
-    sim.obs[i] ~dnorm(mu, tau)
-  }
-  sim.mu &lt;- mean(sim.obs)
-  obs.mean.higher &lt;- obs.mu &gt; sim.mu
-  
-  # Hooks for automatic integration with R:
-  #data# obs, n.obs, obs.mu, prior.mu.mu, prior.mu.tau
-  #monitor# obs.mean.higher
-}
-&quot;, file = &quot;ppp.mu.jags&quot;)
-
-prior.mu.mu &lt;- 0
-prior.mu.tau &lt;- 0.001
-runjags.options(silent.jags=TRUE)
-n.burnin &lt;- n.sample &lt;- 5000
-results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, sample=n.sample)</code></pre>
-<pre><code>## Warning: No initial values were provided - JAGS will use the same initial
-## values for all chains</code></pre>
-<pre><code>## Finished running the simulation</code></pre>
-<pre class="r"><code>pander(summary(results.jags))</code></pre>
-<table>
-<caption>Table continues below</caption>
-<colgroup>
-<<<<<<< HEAD
-<col width="30%" />
-<col width="13%" />
-<col width="12%" />
-<col width="13%" />
-<col width="12%" />
-<col width="8%" />
-<col width="9%" />
-=======
-<col width="28%" />
-<col width="12%" />
-<col width="11%" />
-<col width="12%" />
-<col width="11%" />
-<col width="11%" />
-<col width="11%" />
->>>>>>> 719ba49690e1606c6610b7a39dad8e80f21aac0f
-</colgroup>
-<thead>
-<tr class="header">
-<th align="center"> </th>
-<th align="center">Lower95</th>
-<th align="center">Median</th>
-<th align="center">Upper95</th>
-<th align="center">Mean</th>
-<th align="center">SD</th>
-<th align="center">Mode</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="center"><strong>obs.mean.higher</strong></td>
-<td align="center">0</td>
-<<<<<<< HEAD
-<td align="center">1</td>
-<td align="center">1</td>
-<td align="center">0.5029</td>
-<td align="center">0.5</td>
-<td align="center">1</td>
-</tr>
-</tbody>
-</table>
-<table style="width:97%;">
-=======
-<td align="center">0</td>
-<td align="center">1</td>
-<td align="center">0.4893</td>
-<td align="center">0.4999</td>
-<td align="center">0</td>
-</tr>
-</tbody>
-</table>
-<table style="width:96%;">
->>>>>>> 719ba49690e1606c6610b7a39dad8e80f21aac0f
-<colgroup>
-<col width="30%" />
-<col width="15%" />
-<col width="13%" />
-<col width="11%" />
-<<<<<<< HEAD
-<col width="16%" />
-=======
-<col width="15%" />
->>>>>>> 719ba49690e1606c6610b7a39dad8e80f21aac0f
-<col width="9%" />
-</colgroup>
-<thead>
-<tr class="header">
-<th align="center"> </th>
-<th align="center">MCerr</th>
-<th align="center">MC%ofSD</th>
-<th align="center">SSeff</th>
-<th align="center">AC.10</th>
-<th align="center">psrf</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="center"><strong>obs.mean.higher</strong></td>
-<<<<<<< HEAD
-<td align="center">0.004948</td>
-<td align="center">1</td>
-<td align="center">10213</td>
-<td align="center">-0.005692</td>
-=======
-<td align="center">0.004999</td>
-<td align="center">1</td>
-<td align="center">10000</td>
-<td align="center">0.001861</td>
->>>>>>> 719ba49690e1606c6610b7a39dad8e80f21aac0f
-<td align="center">1</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div id="mis-specifying-the-prior" class="section level2">
-<h2>Mis-specifying the prior</h2>
-<pre class="r"><code>prior.mu.mu &lt;- 10
-prior.mu.tau &lt;- 4
-results.jags &lt;- run.jags(&#39;ppp.mu.jags&#39;, n.chains=2, burnin=n.burnin, sample=n.sample)</code></pre>
-<pre><code>## Warning: No initial values were provided - JAGS will use the same initial
-## values for all chains</code></pre>
-<pre><code>## Finished running the simulation</code></pre>
-<pre class="r"><code>pander(summary(results.jags))</code></pre>
-<table style="width:100%;">
-<caption>Table continues below</caption>
-<colgroup>
-<col width="28%" />
-<col width="12%" />
-<col width="11%" />
-<col width="12%" />
-<col width="11%" />
-<col width="12%" />
-<col width="9%" />
-</colgroup>
-<thead>
-<tr class="header">
-<th align="center"> </th>
-<th align="center">Lower95</th>
-<th align="center">Median</th>
-<th align="center">Upper95</th>
-<th align="center">Mean</th>
-<th align="center">SD</th>
-<th align="center">Mode</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="center"><strong>obs.mean.higher</strong></td>
-<td align="center">0</td>
-<td align="center">0</td>
-<td align="center">0</td>
-<<<<<<< HEAD
-<td align="center">0.0014</td>
-<td align="center">0.03739</td>
-=======
-<td align="center">0.0018</td>
-<td align="center">0.04239</td>
->>>>>>> 719ba49690e1606c6610b7a39dad8e80f21aac0f
-<td align="center">0</td>
-</tr>
-</tbody>
-</table>
-<<<<<<< HEAD
-<table style="width:99%;">
-=======
-<table>
->>>>>>> 719ba49690e1606c6610b7a39dad8e80f21aac0f
-<colgroup>
-<col width="30%" />
-<col width="16%" />
-<col width="13%" />
-<col width="11%" />
-<col width="16%" />
-<<<<<<< HEAD
-<col width="9%" />
-=======
-<col width="11%" />
->>>>>>> 719ba49690e1606c6610b7a39dad8e80f21aac0f
-</colgroup>
-<thead>
-<tr class="header">
-<th align="center"> </th>
-<th align="center">MCerr</th>
-<th align="center">MC%ofSD</th>
-<th align="center">SSeff</th>
-<th align="center">AC.10</th>
-<th align="center">psrf</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="center"><strong>obs.mean.higher</strong></td>
-<<<<<<< HEAD
-<td align="center">0.0003986</td>
-<td align="center">1.1</td>
-<td align="center">8798</td>
-<td align="center">-0.001405</td>
-<td align="center">NA</td>
-=======
-<td align="center">0.0004802</td>
-<td align="center">1.1</td>
-<td align="center">7793</td>
-<td align="center">-0.001807</td>
-<td align="center">1.024</td>
->>>>>>> 719ba49690e1606c6610b7a39dad8e80f21aac0f
-</tr>
-</tbody>
-</table>
-</div>
-<div id="random-effects-formulation-used-in-medicine" class="section level2">
-<h2>Random effects formulation used in medicine</h2>
-<p>The “standard” approach, as used in the introductory course, to
-specifying the interaction between two or more tests, is to add an
-ammount to the probability that the two tests agree, and subtract the
-same amount from the probability that they disagree:</p>
-<table>
-<thead>
-<tr class="header">
-<th>Animal +</th>
-<th>Test 1 +</th>
-<th>Test 1 -</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>Test2 +</td>
-<td><span class="math inline">\(Se_1Se_2 + a\)</span></td>
-<td><span class="math inline">\((1-Se_1)Se_2 - a\)</span></td>
-</tr>
-<tr class="even">
-<td>Test2 -</td>
-<td><span class="math inline">\(Se_1(1-Se_2) - a\)</span></td>
-<td><span class="math inline">\((1-Se_1)(1-Se_2) + a\)</span></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div id="the-problems-with-this-approach" class="section level2">
-<h2>The problems with this approach</h2>
-<ul>
-<li>The possible range of a depends on <span class="math inline">\(Se_1\)</span> and <span class="math inline">\(Se_2\)</span> since these must all be
-probabilities and add up to 1</li>
-<li>It is difficult to define the distribution of a</li>
-</ul>
-</div>
-<div id="alternative-formulations" class="section level2">
-<h2>Alternative formulations</h2>
-<ul>
-<li>Define two latent states
-<ul>
-<li>e.g. infection and seroconversion</li>
-<li>Matt tells me that this converges poorly</li>
-</ul></li>
-<li>“Random effects” model
-<ul>
-<li>“standard” approach, above can be considered a “fixed effects”
+<li>A very old technique (Metropolis, 1950 ish)</li>
+<li>Only requires us to be able to calculate a likelihood</li>
+<li>Allows any type of parameter (discrete, continuous, whatever)</li>
+<li>Different sampling strategies exist e.g. conjugate, slice,
+metropolis, etc, and are often used together in Gibbs sampling</li>
+<li>Autocorrelation i.e. quality of the samples depends on the
 model</li>
-<li>“random effect” refers to a latent continuous variable associated
-with each individual</li>
-<li>the latent variable can be thought of as the propensity to test
-positive</li>
-<li>latent variables are relevant for both true positive animals (Se)
-and true negative animals (Sp)</li>
-<li>we need a monotonically increasing function limited by [0,1] to link
-the propensity of an individual and the probability that it tests
-positive</li>
-<li>a logistic model seems appropriate i.e. <span class="math inline">\(\mathrm{logit}(P(T_{it}) = 1) = a_{td} +
-b_{d}*p_i, D_i=d\)</span>
-<ul>
-<li>where <span class="math inline">\(P(T_{it} = 1)\)</span> is the
-probability that individual i tests positive to test t</li>
-<li><span class="math inline">\(a_{td}\)</span> is a parameter to
-estimate for each test, t and disease status, d (diseased or not) and
-can be thought of as an estimate of teh test sensitivity or
-specificity</li>
-<li><span class="math inline">\(p_i\)</span> is the propensity for
-individual i to test positive, and is <span class="math inline">\(\sim{N(0,1)}\)</span></li>
-<li><span class="math inline">\(b_d\)</span> is a scaling factor since
-we use a standardised normal distribution for <span class="math inline">\(p_i\)</span></li>
-<li>an alternative formulation is to replace <span class="math inline">\(b_{d}*p_i\)</span> with <span class="math inline">\(p_i \simN(0, Tau_d\)</span></li>
-</ul></li>
-<li>to estimate the overall Se or Sp we need to integrate out <span class="math inline">\(p_i\)</span></li>
-<li>if <span class="math inline">\(b_d\)</span> is zero (or all <span class="math inline">\(p_i\)</span> are identical) then the
-Sensitivities/Specificities are conditionally independent</li>
-</ul></li>
 </ul>
-<div id="thought-exercise" class="section level3">
-<h3>Thought exercise</h3>
-<p>How would you:</p>
-<ol style="list-style-type: lower-alpha">
-<li>Simulate data to check to see if this works?</li>
-<li>Code this in JAGS?</li>
-</ol>
 </div>
+<div id="hmc" class="section level2">
+<h2>HMC</h2>
+<p>Hamiltonian Monte Carlo</p>
+<ul>
+<li>A more modern technique (generalisation in 1996): kind of an evolved
+subset of MCMC</li>
+<li>Requires us to be able to calculate the likelihood AND define the
+first derivative of the likelihood</li>
+<li>Limited to only differentiable likelihood surfaces (i.e. continuous
+parameters with smooth likelihood surfaces)</li>
+<li>Typically a single sampling strategy is used for all parameters in a
+model</li>
+<li>Autocorrelation i.e. quality of the samples is more consistent
+between models</li>
+</ul>
+</div>
+</div>
+<div id="software-jags-vs-stan" class="section level1">
+<h1>Software: JAGS vs Stan</h1>
+<div id="headlines" class="section level2">
+<h2>Headlines</h2>
+<ul>
+<li><p>JAGS uses MCMC (Gibbs), Stan uses HMC (NUTS)</p></li>
+<li><p>JAGS models are written in BUGS, Stan models are written in C++
+(ish)</p></li>
+<li><p>JAGS allows discrete parameters, Stan allows only continuous
+parameters</p></li>
+<li><p>JAGS allowes a rejection step using the zeros trick, Stan has an
+explicit rejection step</p></li>
+<li><p>JAGS requires a separate JAGS installation, Stan requires C++
+compilers</p></li>
+<li><p>Compilation of models takes longer for Stan, but can be re-used
+for different datasets</p></li>
+<li><p>Compilation of models is faster for JAGS, but is tied to a
+specific dataset</p></li>
+<li><p>Stan models can be embedded within an R package, JAGS models
+cannot be self-contained</p></li>
+<li><p>JAGS produces samples faster, Stan must calculate derivatives and
+is therefore slower</p></li>
+<li><p>JAGS produces higher quality samples for simple models, Stan
+produces higher quality samples for complex models</p></li>
+<li><p>A coding mistake in JAGS causes an error, a coding mistake in
+Stan may cause a segfault!</p></li>
+</ul>
+</div>
+<div id="comparison" class="section level2">
+<h2>Comparison</h2>
+<p>The questions to ask are:</p>
+<ol style="list-style-type: decimal">
+<li>Is the inference the same?</li>
+<li>Which runs fastest?</li>
+<li>Which produces higher effective size?</li>
+<li>What is the “independent sample per second” rate?</li>
+</ol>
+<pre class="r"><code>library(&quot;coda&quot;)
+Tally &lt;- structure(c(205, 22, 26, 47, 142, 39, 31, 88), .Dim = c(4, 2))
+N &lt;- apply(Tally,2,sum)
+P &lt;- 2L</code></pre>
+</div>
+<div id="test-2-pop-jags" class="section level2">
+<h2>2-test, 2-pop: JAGS</h2>
+<pre class="r"><code>library(&quot;runjags&quot;)
+library(&quot;rjags&quot;)
+## Linked to JAGS 4.3.1
+## Loaded modules: basemod,bugs
+mod &lt;- &quot;model{
+  for(p in 1:P){
+    Tally[1:4,p] ~ dmulti(prob[1:4,p], N[p])
+    
+    prob[1,p] &lt;- (prev[p] * ((1-se[1])*(1-se[2]))) + ((1-prev[p]) * ((sp[1])*(sp[2])))
+    prob[2,p] &lt;- (prev[p] * ((se[1])*(1-se[2]))) + ((1-prev[p]) * ((1-sp[1])*(sp[2])))
+    prob[3,p] &lt;- (prev[p] * ((1-se[1])*(se[2]))) + ((1-prev[p]) * ((sp[1])*(1-sp[2])))
+    prob[4,p] &lt;- (prev[p] * ((se[1])*(se[2]))) + ((1-prev[p]) * ((1-sp[1])*(1-sp[2])))
+
+    prev[p] ~ dbeta(1, 1)
+  }
+
+  for(t in 1:2){
+    se[t] ~ dbeta(1,1)
+    sp[t] ~ dbeta(1,1)
+    constraint[t] &lt;- ifelse(se[t]+sp[t] &gt;= 1, 1, 0)
+    Ones[t] ~ dbern(constraint[t])
+  }
+
+  #data# Tally, N, P, Ones
+  #monitor# prev, se, sp
+}&quot;
+
+Ones &lt;- c(1,1)
+jags_total &lt;- system.time({
+  results_jags &lt;- run.jags(mod, n.chains=2, adapt=1000, burnin=1000, sample=5000, summarise=FALSE)
+})
+## Warning: No initial values were provided - JAGS will use the same initial
+## values for all chains
+mcmc &lt;- as.mcmc.list(results_jags, vars=c(&quot;se&quot;,&quot;sp&quot;,&quot;prev&quot;))</code></pre>
+</div>
+<div id="test-2-pop-stan" class="section level2">
+<h2>2-test, 2-pop: Stan</h2>
+<pre class="r"><code>library(&quot;rstan&quot;)
+## Loading required package: StanHeaders
+## rstan (Version 2.21.8, GitRev: 2e1f913d3ca3)
+## For execution on a local, multicore CPU with excess RAM we recommend calling
+## options(mc.cores = parallel::detectCores()).
+## To avoid recompilation of unchanged Stan programs, we recommend calling
+## rstan_options(auto_write = TRUE)
+## 
+## Attaching package: &#39;rstan&#39;
+## The following object is masked from &#39;package:coda&#39;:
+## 
+##     traceplot
+## The following object is masked from &#39;package:runjags&#39;:
+## 
+##     extract
+## The following object is masked from &#39;package:tidyr&#39;:
+## 
+##     extract
+cat(&quot;
+data {
+  int&lt;lower=0&gt; P;
+  int Tally[4,P];
+}
+parameters {
+  vector&lt;lower=0,upper=1&gt;[2] se;
+  vector&lt;lower=0,upper=1&gt;[2] sp;
+  vector&lt;lower=0,upper=1&gt;[P] prev;
+}
+transformed parameters {
+  matrix[4, P] prob;
+
+  for(p in 1:P){
+    prob[1,p] = (prev[p] * ((1-se[1])*(1-se[2]))) + ((1-prev[p]) * ((sp[1])*(sp[2])));
+    prob[2,p] = (prev[p] * ((se[1])*(1-se[2]))) + ((1-prev[p]) * ((1-sp[1])*(sp[2])));
+    prob[3,p] = (prev[p] * ((1-se[1])*(se[2]))) + ((1-prev[p]) * ((sp[1])*(1-sp[2])));
+    prob[4,p] = (prev[p] * ((se[1])*(se[2]))) + ((1-prev[p]) * ((1-sp[1])*(1-sp[2])));
+  }
+}
+model {
+  for(p in 1:P){
+    Tally[,p] ~ multinomial(prob[,p]);
+    prev[p] ~ beta(1,1);
+  }
+
+  for(t in 1:2){
+    se[t] ~ beta(1,1);
+    sp[t] ~ beta(1,1);
+    if((se[t]+sp[t]) &lt; 1.0) reject(\&quot;label switching\&quot;);
+
+  }
+
+}
+&quot;, file=&quot;hwm.stan&quot;)
+
+options(mc.cores = 1L)
+
+stan_comp &lt;- system.time({
+  model &lt;- stan_model(&quot;hwm.stan&quot;)
+})
+## Trying to compile a simple C file
+## Running /Library/Frameworks/R.framework/Resources/bin/R CMD SHLIB foo.c
+## using C compiler: ‘Apple clang version 14.0.0 (clang-1400.0.29.202)’
+## using SDK: ‘’
+## clang -arch arm64 -I&quot;/Library/Frameworks/R.framework/Resources/include&quot; -DNDEBUG   -I&quot;/Library/Frameworks/R.framework/Versions/4.3-arm64/Resources/library/Rcpp/include/&quot;  -I&quot;/Library/Frameworks/R.framework/Versions/4.3-arm64/Resources/library/RcppEigen/include/&quot;  -I&quot;/Library/Frameworks/R.framework/Versions/4.3-arm64/Resources/library/RcppEigen/include/unsupported&quot;  -I&quot;/Library/Frameworks/R.framework/Versions/4.3-arm64/Resources/library/BH/include&quot; -I&quot;/Library/Frameworks/R.framework/Versions/4.3-arm64/Resources/library/StanHeaders/include/src/&quot;  -I&quot;/Library/Frameworks/R.framework/Versions/4.3-arm64/Resources/library/StanHeaders/include/&quot;  -I&quot;/Library/Frameworks/R.framework/Versions/4.3-arm64/Resources/library/RcppParallel/include/&quot;  -I&quot;/Library/Frameworks/R.framework/Versions/4.3-arm64/Resources/library/rstan/include&quot; -DEIGEN_NO_DEBUG  -DBOOST_DISABLE_ASSERTS  -DBOOST_PENDING_INTEGER_LOG2_HPP  -DSTAN_THREADS  -DBOOST_NO_AUTO_PTR  -include &#39;/Library/Frameworks/R.framework/Versions/4.3-arm64/Resources/library/StanHeaders/include/stan/math/prim/fun/Eigen.hpp&#39;  -D_REENTRANT -DRCPP_PARALLEL_USE_TBB=1   -I/opt/R/arm64/include    -fPIC  -falign-functions=64 -Wall -g -O2  -c foo.c -o foo.o
+## In file included from &lt;built-in&gt;:1:
+## In file included from /Library/Frameworks/R.framework/Versions/4.3-arm64/Resources/library/StanHeaders/include/stan/math/prim/fun/Eigen.hpp:22:
+## In file included from /Library/Frameworks/R.framework/Versions/4.3-arm64/Resources/library/RcppEigen/include/Eigen/Dense:1:
+## In file included from /Library/Frameworks/R.framework/Versions/4.3-arm64/Resources/library/RcppEigen/include/Eigen/Core:88:
+## /Library/Frameworks/R.framework/Versions/4.3-arm64/Resources/library/RcppEigen/include/Eigen/src/Core/util/Macros.h:628:1: error: unknown type name &#39;namespace&#39;
+## namespace Eigen {
+## ^
+## /Library/Frameworks/R.framework/Versions/4.3-arm64/Resources/library/RcppEigen/include/Eigen/src/Core/util/Macros.h:628:16: error: expected &#39;;&#39; after top level declarator
+## namespace Eigen {
+##                ^
+##                ;
+## In file included from &lt;built-in&gt;:1:
+## In file included from /Library/Frameworks/R.framework/Versions/4.3-arm64/Resources/library/StanHeaders/include/stan/math/prim/fun/Eigen.hpp:22:
+## In file included from /Library/Frameworks/R.framework/Versions/4.3-arm64/Resources/library/RcppEigen/include/Eigen/Dense:1:
+## /Library/Frameworks/R.framework/Versions/4.3-arm64/Resources/library/RcppEigen/include/Eigen/Core:96:10: fatal error: &#39;complex&#39; file not found
+## #include &lt;complex&gt;
+##          ^~~~~~~~~
+## 3 errors generated.
+## make: *** [foo.o] Error 1
+stan_run &lt;- system.time({
+  results_stan &lt;- sampling(model, list(P=P,Tally=Tally), iter=7000, warmup=2000, chains=2)
+})
+## 
+## SAMPLING FOR MODEL &#39;hwm&#39; NOW (CHAIN 1).
+## Chain 1: Rejecting initial value:
+## Chain 1:   Error evaluating the log probability at the initial value.
+## Chain 1: Exception: label switching  (in &#39;model1546736b70411_hwm&#39; at line 30)
+## 
+## Chain 1: Rejecting initial value:
+## Chain 1:   Error evaluating the log probability at the initial value.
+## Chain 1: Exception: label switching  (in &#39;model1546736b70411_hwm&#39; at line 30)
+## 
+## Chain 1: Rejecting initial value:
+## Chain 1:   Error evaluating the log probability at the initial value.
+## Chain 1: Exception: label switching  (in &#39;model1546736b70411_hwm&#39; at line 30)
+## 
+## Chain 1: Rejecting initial value:
+## Chain 1:   Error evaluating the log probability at the initial value.
+## Chain 1: Exception: label switching  (in &#39;model1546736b70411_hwm&#39; at line 30)
+## 
+## Chain 1: Rejecting initial value:
+## Chain 1:   Error evaluating the log probability at the initial value.
+## Chain 1: Exception: label switching  (in &#39;model1546736b70411_hwm&#39; at line 30)
+## 
+## Chain 1: Rejecting initial value:
+## Chain 1:   Error evaluating the log probability at the initial value.
+## Chain 1: Exception: label switching  (in &#39;model1546736b70411_hwm&#39; at line 30)
+## 
+## Chain 1: Rejecting initial value:
+## Chain 1:   Error evaluating the log probability at the initial value.
+## Chain 1: Exception: label switching  (in &#39;model1546736b70411_hwm&#39; at line 30)
+## 
+## Chain 1: Rejecting initial value:
+## Chain 1:   Error evaluating the log probability at the initial value.
+## Chain 1: Exception: label switching  (in &#39;model1546736b70411_hwm&#39; at line 30)
+## 
+## Chain 1: Rejecting initial value:
+## Chain 1:   Error evaluating the log probability at the initial value.
+## Chain 1: Exception: label switching  (in &#39;model1546736b70411_hwm&#39; at line 30)
+## 
+## Chain 1: 
+## Chain 1: Gradient evaluation took 2.8e-05 seconds
+## Chain 1: 1000 transitions using 10 leapfrog steps per transition would take 0.28 seconds.
+## Chain 1: Adjust your expectations accordingly!
+## Chain 1: 
+## Chain 1: 
+## Chain 1: Iteration:    1 / 7000 [  0%]  (Warmup)
+## Chain 1: Iteration:  700 / 7000 [ 10%]  (Warmup)
+## Chain 1: Iteration: 1400 / 7000 [ 20%]  (Warmup)
+## Chain 1: Iteration: 2001 / 7000 [ 28%]  (Sampling)
+## Chain 1: Iteration: 2700 / 7000 [ 38%]  (Sampling)
+## Chain 1: Iteration: 3400 / 7000 [ 48%]  (Sampling)
+## Chain 1: Iteration: 4100 / 7000 [ 58%]  (Sampling)
+## Chain 1: Iteration: 4800 / 7000 [ 68%]  (Sampling)
+## Chain 1: Iteration: 5500 / 7000 [ 78%]  (Sampling)
+## Chain 1: Iteration: 6200 / 7000 [ 88%]  (Sampling)
+## Chain 1: Iteration: 6900 / 7000 [ 98%]  (Sampling)
+## Chain 1: Iteration: 7000 / 7000 [100%]  (Sampling)
+## Chain 1: 
+## Chain 1:  Elapsed Time: 0.139136 seconds (Warm-up)
+## Chain 1:                0.282877 seconds (Sampling)
+## Chain 1:                0.422013 seconds (Total)
+## Chain 1: 
+## 
+## SAMPLING FOR MODEL &#39;hwm&#39; NOW (CHAIN 2).
+## Chain 2: Rejecting initial value:
+## Chain 2:   Error evaluating the log probability at the initial value.
+## Chain 2: Exception: label switching  (in &#39;model1546736b70411_hwm&#39; at line 30)
+## 
+## Chain 2: 
+## Chain 2: Gradient evaluation took 1.2e-05 seconds
+## Chain 2: 1000 transitions using 10 leapfrog steps per transition would take 0.12 seconds.
+## Chain 2: Adjust your expectations accordingly!
+## Chain 2: 
+## Chain 2: 
+## Chain 2: Iteration:    1 / 7000 [  0%]  (Warmup)
+## Chain 2: Iteration:  700 / 7000 [ 10%]  (Warmup)
+## Chain 2: Iteration: 1400 / 7000 [ 20%]  (Warmup)
+## Chain 2: Iteration: 2001 / 7000 [ 28%]  (Sampling)
+## Chain 2: Iteration: 2700 / 7000 [ 38%]  (Sampling)
+## Chain 2: Iteration: 3400 / 7000 [ 48%]  (Sampling)
+## Chain 2: Iteration: 4100 / 7000 [ 58%]  (Sampling)
+## Chain 2: Iteration: 4800 / 7000 [ 68%]  (Sampling)
+## Chain 2: Iteration: 5500 / 7000 [ 78%]  (Sampling)
+## Chain 2: Iteration: 6200 / 7000 [ 88%]  (Sampling)
+## Chain 2: Iteration: 6900 / 7000 [ 98%]  (Sampling)
+## Chain 2: Iteration: 7000 / 7000 [100%]  (Sampling)
+## Chain 2: 
+## Chain 2:  Elapsed Time: 0.129321 seconds (Warm-up)
+## Chain 2:                0.307217 seconds (Sampling)
+## Chain 2:                0.436538 seconds (Total)
+## Chain 2:
+## Warning: There were 1 divergent transitions after warmup. See
+## https://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+## to find out why this is a problem and how to eliminate them.
+## Warning: Examine the pairs() plot to diagnose sampling problems
+hmc &lt;- extract(results_stan, pars=c(&quot;se&quot;,&quot;sp&quot;,&quot;prev&quot;), permuted=FALSE)
+hmc &lt;- as.mcmc.list(as.mcmc(hmc[,1,]), as.mcmc(hmc[,2,]))</code></pre>
+</div>
+<div id="results-comparison" class="section level2">
+<h2>Results comparison</h2>
+<pre class="r"><code>summary(results_jags)
+##           Lower95    Median   Upper95      Mean         SD      Mode
+## prev[1] 0.1604364 0.2475442 0.3375147 0.2494570 0.04537430 0.2491037
+## prev[2] 0.3692840 0.4837957 0.5882767 0.4824567 0.05632573 0.4833154
+## se[1]   0.6953306 0.8226274 0.9762877 0.8251310 0.07330300 0.8122642
+## se[2]   0.6359156 0.7343111 0.8597061 0.7406699 0.05695387 0.7302786
+## sp[1]   0.8993326 0.9619765 0.9999864 0.9568570 0.03029656 0.9800047
+## sp[2]   0.8583372 0.9204920 0.9918198 0.9210381 0.03543887 0.9174937
+##                MCerr MC%ofSD SSeff     AC.10     psrf
+## prev[1] 0.0016193510     3.6   785 0.2426537 1.000099
+## prev[2] 0.0021175998     3.8   707 0.2652158 1.001111
+## se[1]   0.0028270005     3.9   672 0.2779333 1.004850
+## se[2]   0.0016829086     3.0  1145 0.1596973 1.001443
+## sp[1]   0.0009435262     3.1  1031 0.1547664 1.002224
+## sp[2]   0.0013949340     3.9   645 0.2828058 1.006015
+summary(results_stan)$summary
+##                    mean      se_mean         sd          2.5%           25%
+## se[1]        0.81725169 0.0014477082 0.07241690    0.68789548    0.76342045
+## se[2]        0.74012941 0.0012356563 0.05692737    0.64601173    0.70055915
+## sp[1]        0.95717792 0.0006142881 0.03051959    0.88569556    0.93839849
+## sp[2]        0.92442867 0.0007154797 0.03544943    0.85416164    0.89887188
+## prev[1]      0.25339434 0.0009181159 0.04581244    0.16733835    0.22104394
+## prev[2]      0.48630128 0.0011816515 0.05617217    0.36929960    0.44967642
+## prob[1,1]    0.67200602 0.0002872495 0.02717608    0.61676821    0.65401992
+## prob[1,2]    0.47690534 0.0003234235 0.02872776    0.42017122    0.45771020
+## prob[2,1]    0.08420133 0.0001681428 0.01377757    0.06007269    0.07449777
+## prob[2,2]    0.12469401 0.0002332150 0.01715626    0.09272228    0.11282572
+## prob[3,1]    0.09021460 0.0002213596 0.01496105    0.06326968    0.07969380
+## prob[3,2]    0.10538562 0.0002270661 0.01615269    0.07590988    0.09392785
+## prob[4,1]    0.15357805 0.0002117296 0.01895680    0.11717800    0.14071013
+## prob[4,2]    0.29301504 0.0002277313 0.02464847    0.24619935    0.27603942
+## lp__      -666.32969298 0.0386690643 1.91324218 -670.98328731 -667.37176236
+##                     50%           75%        97.5%     n_eff      Rhat
+## se[1]        0.81415588    0.86724588    0.9661470  2502.175 0.9999019
+## se[2]        0.73370594    0.77186093    0.8735811  2122.496 1.0003459
+## sp[1]        0.96234209    0.98173545    0.9982496  2468.386 1.0001907
+## sp[2]        0.92413204    0.95025679    0.9905784  2454.843 0.9998809
+## prev[1]      0.25180981    0.28334104    0.3464804  2489.842 1.0000677
+## prev[2]      0.48745455    0.52560839    0.5894732  2259.767 1.0000420
+## prob[1,1]    0.67228099    0.69049690    0.7239940  8950.657 1.0000258
+## prob[1,2]    0.47704597    0.49617177    0.5332587  7889.700 0.9999153
+## prob[2,1]    0.08312086    0.09298968    0.1137782  6714.114 0.9998854
+## prob[2,2]    0.12411897    0.13582340    0.1596611  5411.682 1.0000979
+## prob[3,1]    0.08939004    0.09987573    0.1218210  4568.013 1.0000148
+## prob[3,2]    0.10455910    0.11610290    0.1388061  5060.404 0.9998811
+## prob[4,1]    0.15336720    0.16589478    0.1924472  8016.165 0.9999677
+## prob[4,2]    0.29254832    0.30946738    0.3431885 11714.784 0.9999106
+## lp__      -665.98187891 -664.91969670 -663.6760541  2448.007 1.0002406</code></pre>
+</div>
+<div id="performance-comparison" class="section level2">
+<h2>Performance comparison</h2>
+<p>Total time:</p>
+<pre class="r"><code>jags_total
+##    user  system elapsed 
+##   0.171   0.046   0.257
+stan_comp
+##    user  system elapsed 
+##  11.031   0.863  13.570
+stan_run
+##    user  system elapsed 
+##   1.020   0.017   1.058</code></pre>
+<p>Sample quality:</p>
+<pre class="r"><code>effectiveSize(mcmc)
+##     se[1]     se[2]     sp[1]     sp[2]   prev[1]   prev[2] 
+##  672.3442 1145.3161 1031.0476  645.4349  785.1232  707.4991
+effectiveSize(hmc)
+##    se[1]    se[2]    sp[1]    sp[2]  prev[1]  prev[2] 
+## 1423.756 1411.533 1429.888 1428.179 1412.943 1425.085</code></pre>
+<p>Number of independent samples per second:</p>
+<pre class="r"><code>mean(effectiveSize(mcmc)) / jags_total[&quot;elapsed&quot;]
+##  elapsed 
+## 3233.959
+mean(effectiveSize(hmc)) / stan_run[&quot;elapsed&quot;]
+##  elapsed 
+## 1343.948
+mean(effectiveSize(hmc)) / (stan_comp[&quot;elapsed&quot;]+stan_run[&quot;elapsed&quot;])
+## elapsed 
+## 97.2038</code></pre>
+</div>
+<div id="conclusion" class="section level2">
+<h2>Conclusion</h2>
+<p>The results are the same!</p>
+<p>The Stan model is a bit more complex to write and use than the JAGS
+model (or at least, I think so, but then maybe I am biased!)</p>
+<p>JAGS produces lower quality samples but more quickly than Stan</p>
+<p>However, JAGS will produce relatively higher quality samples for
+simpler models, and relatively lower quality samples for more complex
+models</p>
+<p>[Note: this is not an entirely fair comparison, due to Rmarkdown etc
+overheads]</p>
+</div>
+</div>
+<div id="position-paper-topics" class="section level1">
+<h1>Position paper topics</h1>
+<p>Suggestions?</p>
 </div>
 
 
